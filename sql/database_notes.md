@@ -27,6 +27,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - `workout_routes`: GPS route summary and sampled coordinates for tracked cardio workouts.
 - `workout_weather`: Open-Meteo weather matched to GPS workout route center and time window.
 - `strength_sets`: active exercise sets from strength sessions; REST periods are excluded.
+- `coach_decisions`: durable coach decision log for load changes, go/no-go calls, watchpoint follow-ups, and resolved/superseded coaching decisions.
 
 ## Stream Interpretation
 
@@ -45,6 +46,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - Zone 2 endurance work is `zone2_mins`. Zone 4-5 is high-intensity leakage or deliberate hard work.
 - Use `workout_weather` when interpreting unusually high HR, pace drift, heavy perceived effort, dehydration risk, or poor recovery after outdoor sessions.
 - Use `strength_sets.weight_kg`, `reps`, and `set_order` to assess strength maintenance or progression.
+- Use `coach_decisions` to preserve why a coaching call was made, what data or session it was linked to, and when it should be reviewed. Keep routine rolling context in `coach/coach_notes.md`; use this table for decisions worth querying later.
 - User currently sleeps roughly 01:00-02:00 to 11:00-12:00. Morning body battery readings should usually be taken from entries 10-12 rather than entry 1.
 
 ## Units
@@ -60,3 +62,16 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - Set weight: kg
 - Set duration: seconds
 - Stress and body battery: 0-100 scale
+
+## Coach Decision Log
+
+`coach_decisions` is for durable decisions, not every observation. Good entries include load reductions, event readiness calls, injury-risk constraints, plan changes, or follow-up tests.
+
+- `date`: date the decision applies to or was made.
+- `topic`: short category such as `load`, `injury`, `event`, `nutrition`, `gear`, or `strength`.
+- `decision`: concise coaching call.
+- `reason`: brief rationale, including the decisive context.
+- `linked_activity_id`: optional Garmin activity link when the decision came from a workout.
+- `linked_date`: optional daily-summary or plan date link when no single activity applies.
+- `status`: `active`, `resolved`, or `superseded`.
+- `next_review_date`: optional date to revisit the decision.

@@ -110,3 +110,18 @@ FROM daily_summary
 WHERE weight_kg IS NOT NULL
 ORDER BY date DESC
 LIMIT 30;
+
+-- Active coach decisions and follow-ups
+SELECT decision_id, date, topic, decision, reason,
+       linked_activity_id, linked_date, next_review_date
+FROM coach_decisions
+WHERE status = 'active'
+ORDER BY COALESCE(next_review_date, date) ASC, decision_id ASC;
+
+-- Recent coach decisions with linked workout context
+SELECT d.decision_id, d.date, d.topic, d.status, d.decision, d.reason,
+       w.date AS workout_date, w.sport, w.name, w.distance_km, w.avg_hr
+FROM coach_decisions d
+LEFT JOIN workouts w ON w.activity_id = d.linked_activity_id
+ORDER BY d.date DESC, d.decision_id DESC
+LIMIT 20;

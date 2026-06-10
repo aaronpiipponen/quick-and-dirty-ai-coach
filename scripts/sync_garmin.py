@@ -197,6 +197,22 @@ def init_db():
         FOREIGN KEY(activity_id) REFERENCES workouts(activity_id)
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS coach_decisions (
+        decision_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        date                 TEXT NOT NULL,
+        topic                TEXT NOT NULL,
+        decision             TEXT NOT NULL,
+        reason               TEXT,
+        linked_activity_id   INTEGER,
+        linked_date          TEXT,
+        status               TEXT NOT NULL DEFAULT 'active'
+                             CHECK(status IN ('active', 'resolved', 'superseded')),
+        next_review_date     TEXT,
+        created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at           TEXT,
+        FOREIGN KEY(linked_activity_id) REFERENCES workouts(activity_id)
+    )''')
+
     conn.commit()
     return conn
 
