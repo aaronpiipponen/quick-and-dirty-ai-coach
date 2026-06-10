@@ -1,4 +1,77 @@
-CREATE TABLE daily_summary (
+DAILY_SUMMARY_COLUMNS = {
+    "date": "TEXT PRIMARY KEY",
+    "weight_kg": "REAL",
+    "vo2_max": "REAL",
+    "resting_hr": "INTEGER",
+    "max_hr": "INTEGER",
+    "total_steps": "INTEGER",
+    "calories_active": "INTEGER",
+    "intensity_minutes": "INTEGER",
+    "sleep_duration_mins": "INTEGER",
+    "sleep_score": "INTEGER",
+    "sleep_deep_mins": "INTEGER",
+    "sleep_light_mins": "INTEGER",
+    "sleep_rem_mins": "INTEGER",
+    "sleep_awake_mins": "INTEGER",
+    "stress_stream": "TEXT",
+    "body_battery_stream": "TEXT",
+    "respiration_stream": "TEXT",
+    "hrv_last_night_avg": "REAL",
+    "hrv_weekly_avg": "REAL",
+    "hrv_status": "TEXT",
+    "training_status": "INTEGER",
+    "training_status_feedback": "TEXT",
+    "training_load_balance_feedback": "TEXT",
+    "training_load": "REAL",
+    "training_readiness": "INTEGER",
+}
+
+TABLE_COLUMNS = {
+    "daily_summary": list(DAILY_SUMMARY_COLUMNS.keys()),
+    "workouts": [
+        "activity_id", "date", "sport", "name", "notes", "total_duration_mins",
+        "distance_km", "avg_pace", "avg_hr", "max_hr", "avg_cadence",
+        "elevation_gain", "elevation_loss", "steps", "calories", "zone1_mins",
+        "zone2_mins", "zone3_mins", "zone4_mins", "zone5_mins", "hr_stream",
+        "pace_stream", "elevation_stream", "cadence_stream", "moving_duration_mins",
+        "elapsed_duration_mins", "avg_moving_pace", "downsampling_rate_secs",
+    ],
+    "strength_sets": [
+        "activity_id", "set_order", "exercise_name", "category", "reps", "weight_kg", "duration_secs",
+    ],
+    "workout_routes": [
+        "activity_id", "start_time_utc", "end_time_utc", "point_count", "start_lat",
+        "start_lon", "end_lat", "end_lon", "min_lat", "max_lat", "min_lon",
+        "max_lon", "center_lat", "center_lon", "sampled_points_json",
+    ],
+    "workout_weather": [
+        "activity_id", "weather_source", "latitude", "longitude", "start_time_utc",
+        "end_time_utc", "avg_temp_c", "min_temp_c", "max_temp_c",
+        "avg_humidity_pct", "precipitation_mm", "rain_mm", "snowfall_mm",
+        "avg_wind_kmh", "max_wind_gust_kmh", "weather_codes_json", "raw_hourly_json",
+    ],
+    "coach_decisions": [
+        "decision_id", "date", "topic", "decision", "reason", "linked_activity_id",
+        "linked_date", "status", "next_review_date", "created_at", "updated_at",
+    ],
+}
+
+PRIMARY_KEYS = {
+    "daily_summary": ["date"],
+    "workouts": ["activity_id"],
+    "strength_sets": ["activity_id", "set_order"],
+    "workout_routes": ["activity_id"],
+    "workout_weather": ["activity_id"],
+    "coach_decisions": ["decision_id"],
+}
+
+DATE_COLUMNS = {
+    "daily_summary": "date",
+    "workouts": "date",
+    "coach_decisions": "date",
+}
+
+DAILY_SUMMARY_SQL = """CREATE TABLE IF NOT EXISTS daily_summary (
         date                 TEXT PRIMARY KEY,
         weight_kg            REAL,
         vo2_max              REAL,
@@ -24,8 +97,11 @@ CREATE TABLE daily_summary (
         training_load_balance_feedback TEXT,
         training_load        REAL,
         training_readiness   INTEGER
-    );
-CREATE TABLE workouts (
+    )"""
+
+SCHEMA_SQL = [
+    DAILY_SUMMARY_SQL,
+    """CREATE TABLE IF NOT EXISTS workouts (
         activity_id           INTEGER PRIMARY KEY,
         date                  TEXT,
         sport                 TEXT,
@@ -54,8 +130,8 @@ CREATE TABLE workouts (
         elapsed_duration_mins REAL,
         avg_moving_pace       TEXT,
         downsampling_rate_secs REAL
-    );
-CREATE TABLE strength_sets (
+    )""",
+    """CREATE TABLE IF NOT EXISTS strength_sets (
         activity_id     INTEGER,
         set_order       INTEGER,
         exercise_name   TEXT,
@@ -64,8 +140,8 @@ CREATE TABLE strength_sets (
         weight_kg       REAL,
         duration_secs   INTEGER,
         PRIMARY KEY (activity_id, set_order)
-    );
-CREATE TABLE workout_routes (
+    )""",
+    """CREATE TABLE IF NOT EXISTS workout_routes (
         activity_id         INTEGER PRIMARY KEY,
         start_time_utc      TEXT,
         end_time_utc        TEXT,
@@ -82,8 +158,8 @@ CREATE TABLE workout_routes (
         center_lon          REAL,
         sampled_points_json TEXT,
         FOREIGN KEY(activity_id) REFERENCES workouts(activity_id)
-    );
-CREATE TABLE workout_weather (
+    )""",
+    """CREATE TABLE IF NOT EXISTS workout_weather (
         activity_id          INTEGER PRIMARY KEY,
         weather_source       TEXT,
         latitude             REAL,
@@ -102,8 +178,8 @@ CREATE TABLE workout_weather (
         weather_codes_json   TEXT,
         raw_hourly_json      TEXT,
         FOREIGN KEY(activity_id) REFERENCES workouts(activity_id)
-    );
-CREATE TABLE coach_decisions (
+    )""",
+    """CREATE TABLE IF NOT EXISTS coach_decisions (
         decision_id          INTEGER PRIMARY KEY AUTOINCREMENT,
         date                 TEXT NOT NULL,
         topic                TEXT NOT NULL,
@@ -117,4 +193,5 @@ CREATE TABLE coach_decisions (
         created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at           TEXT,
         FOREIGN KEY(linked_activity_id) REFERENCES workouts(activity_id)
-    );
+    )""",
+]

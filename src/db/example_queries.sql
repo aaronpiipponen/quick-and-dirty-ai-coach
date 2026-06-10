@@ -1,6 +1,6 @@
--- Example queries for sql/user_data.db.
+-- Example queries for src/db/user_data.db.
 -- Run from the project root with:
--- sqlite3 -column -header sql/user_data.db < sql/example_queries.sql
+-- sqlite3 -column -header src/db/user_data.db < src/db/example_queries.sql
 
 -- Recent health overview
 SELECT date, weight_kg, resting_hr, sleep_duration_mins, sleep_score,

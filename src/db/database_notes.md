@@ -1,21 +1,21 @@
 # User Data Notes
 
-Local database: `sql/user_data.db`
+Local database: `src/db/user_data.db`
 
-Use `sql/schema.sql` as the structural source of truth for table and column definitions. Keep this file for database usage notes and coaching interpretation only, so schema updates do not need to be duplicated in Markdown.
+Use `src/db/schema.py` as the structural source of truth for table and column definitions. Keep this file for database usage notes and coaching interpretation only, so schema updates do not need to be duplicated in Markdown.
 
 ## Querying
 
 Run ad hoc queries from the project root with:
 
 ```bash
-sqlite3 -column -header sql/user_data.db "YOUR QUERY"
+sqlite3 -column -header src/db/user_data.db "YOUR QUERY"
 ```
 
 For multi-line or complex queries, write them to a temporary `.sql` file and run:
 
 ```bash
-sqlite3 -column -header sql/user_data.db < sql/query.sql
+sqlite3 -column -header src/db/user_data.db < src/db/query.sql
 ```
 
 SQLite supports `json_array_length()` and `json_each()` for stream columns, but for most coaching analysis it is easier to fetch the raw JSON text and interpret the list directly.
@@ -47,7 +47,6 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - Use `workout_weather` when interpreting unusually high HR, pace drift, heavy perceived effort, dehydration risk, or poor recovery after outdoor sessions.
 - Use `strength_sets.weight_kg`, `reps`, and `set_order` to assess strength maintenance or progression.
 - Use `coach_decisions` to preserve why a coaching call was made, what data or session it was linked to, and when it should be reviewed. Keep routine rolling context in `coach/coach_notes.md`; use this table for decisions worth querying later.
-- User currently sleeps roughly 01:00-02:00 to 11:00-12:00. Morning body battery readings should usually be taken from entries 10-12 rather than entry 1.
 
 ## Units
 

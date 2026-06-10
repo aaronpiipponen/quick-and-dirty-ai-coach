@@ -1,6 +1,6 @@
 # Coach Notes
 
-Coach-owned current coaching status. Not user-facing. Keep this file current-focused and prune stale details. Stable user context belongs in `user-example/user_profile.md`.
+Coach-owned current coaching status. Not user-facing. Keep this file current-focused and prune stale details. Stable user context belongs in `user/user_profile.md`; durable decisions belong in `coach_decisions`.
 
 ## User Performance & Recovery Trends
 
@@ -13,7 +13,7 @@ Coach-owned current coaching status. Not user-facing. Keep this file current-foc
 
 *   **Phase:** Base Build, Week 3.
 *   **Primary Goal:** Build consistent easy volume while maintaining strength.
-*   **Current Decision:** Hold long session at 90 minutes until calf response is normal for 48 hours.
+*   **Current Constraint:** Calf response is the limiter for long-session progression; active load decisions should be checked in `coach_decisions`.
 
 ## Active Watchlist
 
