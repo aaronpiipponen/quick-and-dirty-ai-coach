@@ -101,6 +101,7 @@ def fetch(args, conn):
 
         mapping = load_mapping(args.mapping_file)
         table_names = args.table or list(TABLE_COLUMNS.keys())
+        validate_mapping(mapping, source_schema)
         payload = {table: [] for table in TABLE_COLUMNS}
 
         for target_table in table_names:
@@ -111,6 +112,12 @@ def fetch(args, conn):
                 if args.strict:
                     raise ValueError(f"No source table mapped for {target_table}")
                 continue
+            date_col = DATE_COLUMNS.get(target_table)
+            if (args.since or args.until) and date_col and date_col not in column_map:
+                raise ValueError(
+                    f"Date filter requested for {target_table}, but target date column "
+                    f"{date_col!r} is not mapped"
+                )
 
             rows = read_rows(source, target_table, source_table, column_map, args)
             payload[target_table].extend(rows)
@@ -138,7 +145,43 @@ def load_mapping(path):
     if not path:
         return {"tables": {}}
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        mapping = json.load(f)
+    if not isinstance(mapping, dict):
+        raise ValueError("Mapping file must contain a JSON object")
+    tables = mapping.setdefault("tables", {})
+    if not isinstance(tables, dict):
+        raise ValueError("Mapping file field 'tables' must be an object")
+    return mapping
+
+
+def validate_mapping(mapping, source_schema):
+    for target_table, table_cfg in mapping.get("tables", {}).items():
+        if target_table not in TABLE_COLUMNS:
+            raise ValueError(f"Mapping references unknown target table: {target_table}")
+        if not isinstance(table_cfg, dict):
+            raise ValueError(f"Mapping for {target_table} must be an object")
+
+        source = table_cfg.get("source")
+        old_name = table_cfg.get("old_name")
+        if source and old_name and source != old_name:
+            raise ValueError(f"Mapping for {target_table} has conflicting source and old_name values")
+        source_table = old_name or source
+        if source_table and source_table not in source_schema:
+            raise ValueError(f"Mapping for {target_table} references missing source table: {source_table}")
+
+        columns = table_cfg.get("columns", {})
+        if not isinstance(columns, dict):
+            raise ValueError(f"Mapping for {target_table}.columns must be an object")
+        for target_col, source_col in columns.items():
+            if target_col not in TABLE_COLUMNS[target_table]:
+                raise ValueError(f"Mapping references unknown target column: {target_table}.{target_col}")
+            if not isinstance(source_col, str):
+                raise ValueError(f"Mapping for {target_table}.{target_col} must be a source column name")
+            if source_table and source_col not in source_schema[source_table]:
+                raise ValueError(
+                    f"Mapping for {target_table}.{target_col} references missing source column: "
+                    f"{source_table}.{source_col}"
+                )
 
 
 def resolve_table_mapping(target_table, source_schema, mapping, auto_map, strict):
@@ -151,9 +194,17 @@ def resolve_table_mapping(target_table, source_schema, mapping, auto_map, strict
         source_table = first_normalized_match(target_table, source_schema.keys())
     if not source_table:
         return None, {}
+    if source_table not in source_schema:
+        raise ValueError(f"Source table for {target_table} not found: {source_table}")
 
     source_columns = source_schema[source_table]
     explicit_columns = table_cfg.get("columns", {})
+    for target_col, source_col in explicit_columns.items():
+        if source_col not in source_columns:
+            raise ValueError(
+                f"Mapping for {target_table}.{target_col} references missing source column: "
+                f"{source_table}.{source_col}"
+            )
     column_map = {}
     for target_col in TABLE_COLUMNS[target_table]:
         source_col = explicit_columns.get(target_col)

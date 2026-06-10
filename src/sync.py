@@ -47,13 +47,17 @@ def main():
 
     conn = None if read_only else connect_database(args.output)
     try:
-        payload = source_module.fetch(args, conn)
+        try:
+            payload = source_module.fetch(args, conn)
+        except (FileNotFoundError, ValueError) as e:
+            raise SystemExit(f"Error: {e}") from None
         if payload.get("_exit"):
             return
         dry_run = bool(read_only)
         counts = write_payload(conn, payload, conflict=args.conflict, dry_run=dry_run)
         action = "Planned" if dry_run else "Synced"
-        print(f"{action} rows: " + ", ".join(f"{k}={v}" for k, v in counts.items() if v))
+        count_text = ", ".join(f"{k}={v}" for k, v in counts.items() if v) or "none"
+        print(f"{action} rows: {count_text}")
         if not dry_run:
             print("Sync complete.")
     finally:
