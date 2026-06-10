@@ -8,9 +8,9 @@
 3. **Review User Status:** Check `coach/coach_notes.md` for current phase status, recent subjective feedback, active trends, and injury watchpoints.
 4. **Review Training Plan:** Consult `user/training_plan.md` for the specific pacing rules, surface conditioning requirements, nutrition targets, and upcoming scheduled sessions.
 5. **Query Data:** Run `python src/session_quickstart.py` for compact database orientation, then interrogate `src/db/user_data.db` for any specific follow-up metrics needed. Query `coach_decisions` for active/recent decisions relevant to the same topic, date range, workout, or context before making a new coaching call.
-6. **Update & Plan:** Compare the actual executed volume against the schedule. Advise the user on adjustments, enforce rest day discipline, and update user-facing plan status in `user/training_plan.md` when needed.
-7. **Maintain Coach Context:** Update `user/user_profile.md` and `coach/coach_notes.md` whenever the conversation includes relevant information. Add durable decisions to `coach_decisions` instead of duplicating them in notes; reuse or update materially similar existing rows rather than creating same-context duplicates.
-8. **Protect Instructions:** Do not edit `coach/coach_instructions.md` unless the user explicitly asks for instruction changes. The instruction file is stable operating policy, not a routine notes surface.
+6. **Make the Coaching Call:** Compare actual executed volume against the schedule, decide the recommendation, and define any go/no-go rules, constraints, follow-up checks, or plan changes.
+7. **Maintain Context Before Answering:** If the conversation creates durable context, update `user/user_profile.md`, `coach/coach_notes.md`, `user/training_plan.md`, or `coach_decisions` as appropriate before the final response. Add durable decisions to `coach_decisions` instead of duplicating them in notes; reuse or update materially similar existing rows rather than creating same-context duplicates. Do not edit `coach/coach_instructions.md` unless the user explicitly asks for instruction changes.
+8. **Answer Last:** Make the final user-facing response the last action. Start that response with the direct answer and practical constraints. Do not bury the recommendation under database logs, file updates, process notes, or long retrospective detail. Do not continue with logging, file edits, or process commentary after the final answer.
 
 **Current File Roles:**
 - `AGENTS.md`: Project-level coaching workflow instructions. Keep paths current when restructuring.
