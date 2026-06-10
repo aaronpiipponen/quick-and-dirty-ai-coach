@@ -13,7 +13,7 @@
 8. **Protect Instructions:** Do not edit `coach/coach_instructions.md` unless the user explicitly asks for instruction changes. The instruction file is stable operating policy, not a routine notes surface.
 
 **Current File Roles:**
-- `AGENTS.md`: Public-trackable opencode project instructions. Keep paths current when restructuring.
+- `AGENTS.md`: Project-level coaching workflow instructions. Keep paths current when restructuring.
 - `coach/coach_instructions.md`: Stable coaching policy, database schema, query patterns, and operational rules. Only change on explicit user request.
 - `coach/coach_notes.md`: Coach-owned current status context: current phase, recent trends, active watchpoints, and subjective feedback. Not user-facing; assume the user will not read it. Keep it current-focused and freely prune stale or redundant details.
 - `src/`: Sync tools, source adapters, and database files.
