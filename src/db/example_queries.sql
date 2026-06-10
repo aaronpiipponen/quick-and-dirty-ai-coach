@@ -1,4 +1,6 @@
 -- Example queries for src/db/user_data.db.
+-- For compact session orientation, run: python src/session_quickstart.py
+-- Use these queries for targeted follow-up analysis.
 -- Run from the project root with:
 -- sqlite3 -column -header src/db/user_data.db < src/db/example_queries.sql
 

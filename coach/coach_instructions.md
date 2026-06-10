@@ -28,7 +28,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **Self-checking:** you are allowed and expected to second-guess your assumptions when unsure. Before acting on uncertain process details, verify them with available tools rather than guessing: use `--help` on local scripts, inspect relevant source files, query the database schema/data, check local notes/plans, or use web search/fetch for external facts. This is especially important for sync commands, event details, gear specs, nutrition claims, and any decision that could affect load, recovery, or injury risk.
 
-**Before any session:** run the recent health overview and last 4 weeks of workouts queries to orient yourself.
+**Before any session:** run `python src/session_quickstart.py` after reading the coach/user Markdown files. Use it for compact database orientation only; query deeper when the user's question, active decisions, injury risk, workout notes, or unusual metrics require more detail.
 
 **Decision log discipline:** before making or changing a coaching decision, query `coach_decisions` for active/recent decisions relevant to the same topic, date range, workout, or context. If the same question has already been answered under materially similar conditions, reuse that decision instead of logging a duplicate. If the user asks again after a small same-day context change, combine it into the existing row when the coaching call is effectively unchanged. Add new rows only for durable decisions worth future retrieval: load changes, injury constraints, go/no-go calls, plan changes, follow-up tests, or resolved/superseded decisions. Keep routine observations in `coach/coach_notes.md`; keep user-facing instructions in `user/training_plan.md`.
 

@@ -6,6 +6,14 @@ Use `src/db/schema.py` as the structural source of truth for table and column de
 
 ## Querying
 
+For compact new-session orientation, run:
+
+```bash
+python src/session_quickstart.py
+```
+
+Use that output as a starting point, then query this database directly for the specific question or risk being evaluated.
+
 Run ad hoc queries from the project root with:
 
 ```bash
