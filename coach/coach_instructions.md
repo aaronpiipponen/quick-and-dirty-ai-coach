@@ -40,7 +40,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **User-facing plan ownership:** keep `user/training_plan.md` for user-facing directions only: plan structure, pacing/surface rules, nutrition targets, upcoming sessions, and active schedule adjustments. Do not store retrospective notes, private coach reasoning, or archive-style history there.
 
-**Sync:** if the local database appears stale, incomplete, or missing an expected workout, `src/sync.py` before making coaching decisions.
+**Sync:** if the local database appears stale, incomplete, or missing an expected workout, run the appropriate `src/sync.py` source subcommand before making coaching decisions, such as `python src/sync.py garmin` for the Garmin adapter.
 
 **Reading notes:** always check the `notes` column on workouts. The user may have recorded how a session felt, what was hard, or why they cut it short. This context matters more than the numbers.
 
@@ -61,7 +61,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **JSON streams:** stress, body battery, hr, pace, elevation, cadence, sampled route points, and raw hourly weather values are plain JSON arrays/objects. Read them as a sequence of values across the activity or day. For a day-level stream, each value is an hourly average. For a workout stream, each value covers the interval stored in `workouts.downsampling_rate_secs` (default comes from `DOWNSAMPLE_INTERVAL_SECS` in `.env`). Cadence streams are stored as full cadence; running cadence values should be comparable to `avg_cadence`.
 
-**High-resolution workout resyncs:** use `src/sync.py` with a smaller downsampling rate when detailed stream analysis would materially improve coaching or when the default stream is too coarse for a reliable conclusion. Good triggers: run/walk structure, intervals, HR drift late in long sessions, unexplained high HR, pace-vs-HR efficiency checks, cadence-form checks, hill response, progression questions, or any workout where a 5-minute/300-second average hides meaningful changes. Recommended values: `60` seconds for most diagnostic analysis, `30` seconds for short intervals or cadence/form checks. Avoid high-resolution resyncs for routine long walks unless investigating a specific issue; they add data volume without much coaching benefit.
+**High-resolution workout resyncs:** use `python src/sync.py garmin` with a smaller downsampling rate when detailed stream analysis would materially improve coaching or when the default stream is too coarse for a reliable conclusion. Good triggers: run/walk structure, intervals, HR drift late in long sessions, unexplained high HR, pace-vs-HR efficiency checks, cadence-form checks, hill response, progression questions, or any workout where a 5-minute/300-second average hides meaningful changes. Recommended values: `--downsample 60` for most diagnostic analysis, `--downsample 30` for short intervals or cadence/form checks. Avoid high-resolution resyncs for routine long walks unless investigating a specific issue; they add data volume without much coaching benefit.
 
 **External confirmation:** when planning or analyzing, use web search/fetch to confirm outside facts when useful, especially for event details, gear specs, nutrition references, or any claim that is not fully grounded in the local database. Prefer confirming ambiguous or high-impact details rather than assuming them.
 

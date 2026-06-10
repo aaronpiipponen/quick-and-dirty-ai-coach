@@ -18,6 +18,6 @@
 - `coach/coach_notes.md`: Coach-owned current status context: current phase, recent trends, active watchpoints, and subjective feedback. Not user-facing; assume the user will not read it. Keep it current-focused and freely prune stale or redundant details.
 - `src/`: Sync tools, source adapters, and database files.
 - `src/session_quickstart.py`: Compact new-session database orientation. Run this after reading context files, then query deeper only where needed.
-- `src/db/user_data.db`: Local SQLite database containing user health, workout data, and `coach_decisions`. Query current data before coaching decisions, check prior relevant decisions before making new ones, and sync with `src/sync.py` if stale or incomplete.
+- `src/db/user_data.db`: Local SQLite database containing user health, workout data, and `coach_decisions`. Query current data before coaching decisions, check prior relevant decisions before making new ones, and sync with the appropriate `src/sync.py` source subcommand if stale or incomplete.
 - `user/user_profile.md`: Coach-owned stable user context: identity, preferences, injury history, gear, event logistics, lifestyle defaults, and long-term reference data. Not user-facing; assume the user will not read it. Keep it current and non-redundant by freely adding, removing, consolidating, or refreshing details.
 - `user/training_plan.md`: User-facing plan, pacing rules, surface rules, nutrition targets, and schedule adjustments. Do not store retrospective notes or analysis here.

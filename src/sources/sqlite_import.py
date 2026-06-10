@@ -1,9 +1,11 @@
 import json
+import datetime
 import os
 import re
 import sqlite3
 
 from db.schema import DATE_COLUMNS, TABLE_COLUMNS
+from sources.common import add_database_arguments, validate_date_range
 
 
 DEFAULT_TABLE_MAP = {table: table for table in TABLE_COLUMNS}
@@ -34,10 +36,38 @@ DEFAULT_COLUMN_ALIASES = {
     },
 }
 
+HELP = "Import normalized data from another SQLite database."
+DESCRIPTION = "Import compatible or mapped source tables from another SQLite database into the coaching database."
+EPILOG = """examples:
+  python src/sync.py sqlite_import --input backup.db --plan
+  python src/sync.py sqlite_import --input backup.db --dry-run --auto-map
+  python src/sync.py sqlite_import --input backup.db --table workouts --since 2026-06-01
+  python src/sync.py sqlite_import --input backup.db --map mapping.json --strict
+"""
+
 
 def add_arguments(parser):
-    parser.add_argument("-i", "--input", help="Source SQLite database to import from.")
-    parser.add_argument("-t", "--table", action="append", choices=sorted(TABLE_COLUMNS), help="Only import this table. Repeatable.")
+    add_database_arguments(parser)
+    parser.add_argument("-i", "--input", required=True, help="Source SQLite database to import from.")
+    parser.add_argument(
+        "--since",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="Start date filter for imported tables with date columns.",
+    )
+    parser.add_argument(
+        "--until",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="End date filter for imported tables with date columns.",
+    )
+    parser.add_argument(
+        "-t",
+        "--table",
+        action="append",
+        choices=sorted(TABLE_COLUMNS),
+        help="Only import this table. Repeatable.",
+    )
     parser.add_argument("-m", "--map", dest="mapping_file", help="JSON mapping file for renamed tables/columns.")
     parser.add_argument("--auto-map", action="store_true", help="Infer obvious table/column mappings.")
     parser.add_argument("--print-schema", action="store_true", help="Print source database tables and columns, then exit.")
@@ -45,6 +75,14 @@ def add_arguments(parser):
     parser.add_argument("--dry-run", action="store_true", help="Validate and count rows without writing.")
     parser.add_argument("--strict", action="store_true", help="Fail when a target column cannot be mapped.")
     parser.add_argument("--skip-streams", action="store_true", help="Skip JSON stream columns during import.")
+
+
+def validate_args(parser, args):
+    validate_date_range(parser, args)
+
+
+def is_read_only(args):
+    return args.print_schema or args.plan or args.dry_run
 
 
 def fetch(args, conn):

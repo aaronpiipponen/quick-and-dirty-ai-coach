@@ -9,6 +9,8 @@ import urllib.request
 
 from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError
 
+from sources.common import add_database_arguments, validate_date_range
+
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HARDCODED_BACKFILL_DATE = datetime.date.fromisoformat(os.getenv("BACKFILL_DATE", "2026-01-01"))
@@ -18,6 +20,16 @@ if not os.path.isabs(GARMIN_TOKENSTORE):
 GARMIN_RETRY_ATTEMPTS = int(os.getenv("GARMIN_RETRY_ATTEMPTS", "5"))
 GARMIN_RETRY_MIN_WAIT = float(os.getenv("GARMIN_RETRY_MIN_WAIT", "2"))
 GARMIN_RETRY_MAX_WAIT = float(os.getenv("GARMIN_RETRY_MAX_WAIT", "30"))
+DOWNSAMPLE_INTERVAL_SECS = float(os.getenv("DOWNSAMPLE_INTERVAL_SECS", "300"))
+
+HELP = "Sync Garmin health and workout data."
+DESCRIPTION = "Sync daily health summaries, workouts, routes, weather, and strength data from Garmin."
+EPILOG = """examples:
+  python src/sync.py garmin
+  python src/sync.py garmin --date 2026-06-10
+  python src/sync.py garmin --workout 123456789 --downsample 60
+  python src/sync.py garmin --since 2026-06-01 --until 2026-06-07
+"""
 
 WEATHER_HOURLY_FIELDS = [
     "temperature_2m",
@@ -38,7 +50,51 @@ STRENGTH_SPORTS = {"strength_training", "fitness_equipment"}
 
 
 def add_arguments(parser):
-    pass
+    add_database_arguments(parser)
+    parser.add_argument(
+        "--since",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="Start date filter for Garmin daily summaries and workouts.",
+    )
+    parser.add_argument(
+        "--until",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="End date filter for Garmin daily summaries and workouts.",
+    )
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
+        "-d",
+        "--date",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="Sync only this specific Garmin date.",
+    )
+    target.add_argument(
+        "-w",
+        "--workout",
+        type=int,
+        metavar="ACTIVITY_ID",
+        help="Sync only this Garmin workout id.",
+    )
+    parser.add_argument(
+        "--downsample",
+        type=float,
+        default=DOWNSAMPLE_INTERVAL_SECS,
+        metavar="SECONDS",
+        help="Workout stream downsampling interval in seconds.",
+    )
+
+
+def validate_args(parser, args):
+    validate_date_range(parser, args)
+    if args.date and (args.since or args.until):
+        parser.error("--date cannot be combined with --since or --until")
+    if args.workout and (args.since or args.until):
+        parser.error("--workout cannot be combined with --since or --until")
+    if args.downsample <= 0:
+        parser.error("--downsample must be greater than 0")
 
 
 def login_with_cache(api, tokenstore):
