@@ -26,6 +26,8 @@ This project focuses on connecting data from wearables to coaching decisions whi
 
 The goal is not to replace a professional coach. The goal is to build a small support system for personal training.
 
+Disclaimer: this is a personal decision-support experiment, not medical advice, professional coaching, or a general-purpose fitness product. The sample data in this public repo is fabricated.
+
 ## Architecture
 
 The repo is split into:
@@ -91,6 +93,7 @@ This is published as a portfolio/reference project, not as a ready-to-run produc
 - replace the sample coach/user Markdown files with your own profile, current status, and plan
 - run `python src/sync.py --help` and `python src/sync.py <source> --help` before syncing data
 - run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
+- run `python tools/smoke_test.py` if you want to check that the demo database and core CLI paths still work
 - use `python src/session_quickstart.py` only after the database has been created and populated
 - adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
 
