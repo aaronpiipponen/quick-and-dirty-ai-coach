@@ -43,6 +43,9 @@ EPILOG = """examples:
   python src/sync.py sqlite_import --input backup.db --dry-run --auto-map
   python src/sync.py sqlite_import --input backup.db --table workouts --since 2026-06-01
   python src/sync.py sqlite_import --input backup.db --map mapping.json --strict
+
+mapping file example:
+  src/sources/sqlite_import_mapping.example.md
 """
 
 
