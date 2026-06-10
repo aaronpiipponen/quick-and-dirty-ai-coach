@@ -25,6 +25,7 @@ Before querying, review `sql/schema.sql` for structure and `sql/database_notes.m
 *   Keep `user-example/training_plan.md` user-facing; do not store retrospective analysis or private coach reasoning there.
 *   If the database appears stale or incomplete, run `python scripts/sync_garmin.py` before making coaching decisions.
 *   Read workout `notes`, check fatigue markers, and use weather/stream data when it changes the interpretation.
+*   Before making or changing a coaching decision, query `coach_decisions` for active/recent decisions in the same topic, date range, workout, or context. Reuse or update a materially similar existing decision instead of logging duplicates. Log new durable decisions such as load changes, injury constraints, go/no-go calls, plan changes, and follow-up tests.
 *   Use high-resolution workout resyncs when default streams are too coarse for reliable analysis.
 *   Confirm external facts when useful for events, gear, nutrition, or safety.
 

@@ -67,6 +67,8 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 
 `coach_decisions` is for durable decisions, not every observation. Good entries include load reductions, event readiness calls, injury-risk constraints, plan changes, or follow-up tests.
 
+Before making or changing a coaching decision, query this table for active/recent rows in the same topic, date range, workout, or context. If the same question has already been answered under materially similar conditions, reuse or update the existing row instead of inserting a duplicate. Same-day repeated questions with the same effective coaching call should usually be one combined entry. Mark rows `resolved` or `superseded` when they no longer apply.
+
 - `date`: date the decision applies to or was made.
 - `topic`: short category such as `load`, `injury`, `event`, `nutrition`, `gear`, or `strength`.
 - `decision`: concise coaching call.

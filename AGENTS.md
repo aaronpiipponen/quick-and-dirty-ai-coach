@@ -7,8 +7,8 @@
 2. **Review User Profile:** Read `user-example/user_profile.md` for stable user context.
 3. **Review Coach Notes:** Read `coach-example/coach_notes.md` for current phase status, trends, and watchpoints.
 4. **Review Training Plan:** Read `user-example/training_plan.md` for user-facing schedule, pacing, nutrition, and progression rules.
-5. **Query Data:** Use `sql/schema.sql`, `sql/database_notes.md`, and `sql/example_queries.sql` as the database reference. A real `sql/user_data.db` is intentionally not included.
-6. **Update Context:** Keep profile and coach notes current in a private working copy. Do not store real user health, GPS, credentials, or database files in this public example.
+5. **Query Data:** Use `sql/schema.sql`, `sql/database_notes.md`, and `sql/example_queries.sql` as the database reference. Query `coach_decisions` for active/recent decisions relevant to the same topic, date range, workout, or context before making a new coaching call. A real `sql/user_data.db` is intentionally not included.
+6. **Update Context:** Keep profile and coach notes current in a private working copy. Add durable decisions to `coach_decisions`, reusing or updating materially similar rows instead of creating same-context duplicates. Do not store real user health, GPS, credentials, or database files in this public example.
 
 **File Roles:**
 - `coach-example/`: Public-safe example coach instructions and current notes.
