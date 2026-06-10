@@ -38,7 +38,7 @@ The repo is split into:
 - `src/sync.py`: sync CLI dispatcher for source adapters
 - `src/sources/`: source adapters
 - `src/sources/common.py`: shared adapter CLI helpers for database output and validation
-- `src/db/`: schema, database initialization, writer, and interpretation notes and example queries for the coach
+- `src/db/`: schema, database initialization, fabricated sample data, writer, and interpretation notes and example queries for the coach
 - `src/session_quickstart.py`: compact database orientation for a new session without prior context
 - `.env.example`: required environment variables and local defaults
 
@@ -90,10 +90,17 @@ This is published as a portfolio/reference project, not as a ready-to-run produc
 - create a private `.env` from `.env.example` with your own source credentials and database path
 - replace the sample coach/user Markdown files with your own profile, current status, and plan
 - run `python src/sync.py --help` and `python src/sync.py <source> --help` before syncing data
+- run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
 - use `python src/session_quickstart.py` only after the database has been created and populated
 - adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
 
 The intended loop is simple: sync or import data, ask a training question through the agent CLI, and let the coach read the Markdown context plus SQLite summaries before answering.
+
+Example prompt and answer using the fabricated sample database:
+
+![Example opencode prompt](docs/screenshots/example_prompt.png)
+
+![Example opencode answer](docs/screenshots/example_answer.png)
 
 Example user prompts:
 

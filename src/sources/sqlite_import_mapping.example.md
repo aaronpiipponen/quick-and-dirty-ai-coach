@@ -52,6 +52,7 @@ Use `--dry-run` or `--plan` first. Remove it when the plan looks correct.
 - `--strict` fails if a target table or column cannot be mapped, except `decision_id`.
 - `--since` and `--until` only work for a table if its target date column is mapped.
 - Values are copied as-is. The importer does not convert units, timestamps, or pace formats.
+- Explicit mapping mistakes fail before writing, including unknown target tables, unknown target columns, missing source tables, and missing source columns.
 
 Use this to inspect the source database before writing a mapping:
 
