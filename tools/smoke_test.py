@@ -46,7 +46,7 @@ def main():
         bad_map = tmp_path / "bad_mapping.json"
 
         run(["src/db/init.py", "--db", str(sample_db), "--sample"])
-        quickstart = run(["src/session_quickstart.py", "--db", str(sample_db)])
+        quickstart = run(["tools/session_quickstart.py", "--db", str(sample_db)])
         if "Anchor date: 2026-06-10" not in quickstart.stdout:
             raise SystemExit("Smoke test failed: sample quickstart anchor date was not 2026-06-10")
         if "calf_load" not in quickstart.stdout:

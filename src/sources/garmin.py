@@ -8,7 +8,8 @@ import time
 from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError
 
 from sources.common import add_database_arguments, validate_date_range
-from workout_weather import fetch_open_meteo_weather, summarize_weather
+from sources.workout_surfaces import analyze_route_surfaces
+from sources.workout_weather import fetch_open_meteo_weather, summarize_weather
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,6 +28,7 @@ EPILOG = """examples:
   python src/sync.py garmin
   python src/sync.py garmin --date 2026-06-10
   python src/sync.py garmin --workout 123456789 --downsample 60
+  python src/sync.py garmin --surfaces-only --since 2026-06-01
   python src/sync.py garmin --since 2026-06-01 --until 2026-06-07
 """
 
@@ -73,6 +75,16 @@ def add_arguments(parser):
         metavar="SECONDS",
         help="Workout stream downsampling interval in seconds.",
     )
+    parser.add_argument(
+        "--skip-surfaces",
+        action="store_true",
+        help="Skip OSM-based workout surface matching for this sync.",
+    )
+    parser.add_argument(
+        "--surfaces-only",
+        action="store_true",
+        help="Backfill only route surface data for existing workouts in the target database.",
+    )
 
 
 def validate_args(parser, args):
@@ -83,6 +95,8 @@ def validate_args(parser, args):
         parser.error("--workout cannot be combined with --since or --until")
     if args.downsample <= 0:
         parser.error("--downsample must be greater than 0")
+    if args.surfaces_only and args.skip_surfaces:
+        parser.error("--surfaces-only cannot be combined with --skip-surfaces")
 
 
 def login_with_cache(api, tokenstore):
@@ -316,10 +330,13 @@ def downsample_metrics(details, total_duration_mins, interval_secs):
 def fetch(args, conn):
     api = init_api()
     payload = empty_payload()
+    if args.surfaces_only:
+        backfill_surface_payload(api, conn, payload, args)
+        return payload
     if args.workout:
         print(f"Single-workout mode: syncing {args.workout}")
         print(f"Workout stream downsampling: {args.downsample} sec")
-        act_payload = fetch_workout(api, args.workout, args.downsample)
+        act_payload = fetch_workout(api, args.workout, args.downsample, args.skip_surfaces)
         merge_payload(payload, act_payload)
         return payload
 
@@ -350,7 +367,7 @@ def fetch(args, conn):
     print(f"Fetching workouts from {workout_start} to {workout_end}...")
     activities = api.get_activities_by_date(workout_start.isoformat(), workout_end.isoformat())
     for act in activities:
-        merge_payload(payload, build_workout_payload(api, act, args.downsample))
+        merge_payload(payload, build_workout_payload(api, act, args.downsample, args.skip_surfaces))
     return payload
 
 
@@ -360,6 +377,7 @@ def empty_payload():
         "workouts": [],
         "strength_sets": [],
         "workout_routes": [],
+        "workout_surface_segments": [],
         "workout_weather": [],
         "coach_decisions": [],
         "delete_strength_activity_ids": [],
@@ -390,6 +408,56 @@ def get_workout_range(conn, backfill_date, today):
     if row and row[0]:
         return datetime.date.fromisoformat(row[0]) - datetime.timedelta(days=1), today
     return backfill_date, today
+
+
+def backfill_surface_payload(api, conn, payload, args):
+    if conn is None:
+        raise ValueError("--surfaces-only requires a writable target database")
+    rows = surface_backfill_workouts(conn, args)
+    print(f"Surface-only mode: processing {len(rows)} existing workouts")
+    print(f"Surface stream downsampling: {args.downsample} sec")
+    for row in rows:
+        activity_id = row["activity_id"]
+        print(f"Processing surfaces for {row['date']} {row['sport']} (id: {activity_id})...")
+        try:
+            details = api.get_activity_details(activity_id)
+            add_route_surfaces(payload, activity_id, details, args.downsample)
+        except Exception as e:
+            print(f"  Surfaces unavailable for activity {activity_id}: {e}")
+
+
+def surface_backfill_workouts(conn, args):
+    where = [
+        f"w.sport IN ({', '.join('?' for _ in CARDIO_SPORTS)})",
+        "r.activity_id IS NOT NULL",
+    ]
+    params = list(CARDIO_SPORTS)
+    if args.workout:
+        where.append("w.activity_id = ?")
+        params.append(args.workout)
+    if args.date:
+        where.append("w.date = ?")
+        params.append(args.date.isoformat())
+    if args.since:
+        where.append("w.date >= ?")
+        params.append(args.since.isoformat())
+    if args.until:
+        where.append("w.date <= ?")
+        params.append(args.until.isoformat())
+    if not any([args.workout, args.date, args.since, args.until]):
+        where.append("r.surface_source IS NULL")
+    sql = f"""
+        SELECT w.activity_id, w.date, w.sport
+        FROM workouts w
+        JOIN workout_routes r ON r.activity_id = w.activity_id
+        WHERE {' AND '.join(where)}
+        ORDER BY w.date, w.activity_id
+    """
+    conn.row_factory = None
+    return [
+        {"activity_id": activity_id, "date": date, "sport": sport}
+        for activity_id, date, sport in conn.execute(sql, params).fetchall()
+    ]
 
 
 def fetch_daily_row(api, date_obj):
@@ -517,12 +585,12 @@ def fetch_daily_row(api, date_obj):
         return None
 
 
-def fetch_workout(api, workout_id, downsample):
+def fetch_workout(api, workout_id, downsample, skip_surfaces=False):
     print(f"Fetching workout {workout_id}...")
-    return build_workout_payload(api, api.get_activity(workout_id), downsample)
+    return build_workout_payload(api, api.get_activity(workout_id), downsample, skip_surfaces)
 
 
-def build_workout_payload(api, act, downsample):
+def build_workout_payload(api, act, downsample, skip_surfaces=False):
     payload = empty_payload()
     summary = act.get("summaryDTO") or {}
 
@@ -636,17 +704,20 @@ def build_workout_payload(api, act, downsample):
             print(f"  Exercise sets unavailable for activity {activity_id}: {e}")
 
     if details and sport in CARDIO_SPORTS:
-        add_route_and_weather(payload, activity_id, details)
+        add_route_weather_and_surfaces(payload, activity_id, details, downsample, skip_surfaces=skip_surfaces)
 
     print(f"  -> Prepared {act_date_str} {sport} (id: {activity_id})")
     return payload
 
 
-def add_route_and_weather(payload, activity_id, details):
-    route = summarize_route(extract_route_points(details))
+def add_route_weather_and_surfaces(payload, activity_id, details, downsample, skip_surfaces=False):
+    points = extract_route_points(details)
+    route = summarize_route(points)
     if not route:
         payload["delete_route_weather_activity_ids"].append(activity_id)
         return
+    if not skip_surfaces:
+        add_surface_rows(payload, activity_id, points, route, downsample)
     payload["workout_routes"].append({"activity_id": activity_id, **route})
     try:
         source, weather_data = fetch_open_meteo_weather(route["center_lat"], route["center_lon"], route["start_time_utc"], route["end_time_utc"])
@@ -661,3 +732,22 @@ def add_route_and_weather(payload, activity_id, details):
         })
     except Exception as e:
         print(f"  Weather unavailable for activity {activity_id}: {e}")
+
+
+def add_route_surfaces(payload, activity_id, details, downsample):
+    points = extract_route_points(details)
+    route = summarize_route(points)
+    if not route:
+        return
+    add_surface_rows(payload, activity_id, points, route, downsample)
+    payload["workout_routes"].append({"activity_id": activity_id, **route})
+
+
+def add_surface_rows(payload, activity_id, points, route, downsample):
+    try:
+        surface_segments, surface_summary = analyze_route_surfaces(points, downsample)
+        route.update(surface_summary)
+        for segment in surface_segments:
+            payload["workout_surface_segments"].append({"activity_id": activity_id, **segment})
+    except Exception as e:
+        print(f"  Surfaces unavailable for activity {activity_id}: {e}")

@@ -9,7 +9,7 @@ Use `src/db/schema.py` as the structural source of truth for table and column de
 For compact new-session orientation, run:
 
 ```bash
-python src/session_quickstart.py
+python tools/session_quickstart.py
 ```
 
 Use that output as a starting point, then query this database directly for the specific question or risk being evaluated.
@@ -32,7 +32,8 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 
 - `daily_summary`: one row per calendar day; primary source for health, sleep, recovery, HRV, training readiness, training load, and daily activity trends.
 - `workouts`: one row per Garmin activity; primary source for endurance volume, intensity distribution, pacing, workout notes, and session-level load.
-- `workout_routes`: GPS route summary and sampled coordinates for tracked cardio workouts.
+- `workout_routes`: GPS route summary, sampled coordinates, and OSM-inferred route-level surface totals for tracked cardio workouts.
+- `workout_surface_segments`: downsampled OSM-inferred surface segments for tracked cardio routes. Segment cadence follows the workout sync downsample interval.
 - `workout_weather`: Open-Meteo weather matched to GPS workout route center and time window.
 - `strength_sets`: active exercise sets from strength sessions; REST periods are excluded.
 - `coach_decisions`: durable coach decision log for load changes, go/no-go calls, watchpoint follow-ups, and resolved/superseded coaching decisions.
@@ -41,6 +42,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 
 - Day-level streams in `daily_summary` are ordered hourly averages from Garmin timestamps.
 - Workout streams in `workouts` use the interval in `workouts.downsampling_rate_secs`; default comes from `DOWNSAMPLE_INTERVAL_SECS` in `.env`.
+- Surface rows in `workout_surface_segments` use the same downsample interval as workout streams, but each row's distance is accumulated from the full raw GPS points inside that bucket.
 - `stress_stream` uses Garmin's 0-100 stress scale. Values above ~50 are elevated.
 - `body_battery_stream` uses Garmin's 0-100 body battery scale. Values below ~25 suggest fatigue.
 - `respiration_stream` is breaths/min. Unusually elevated sleeping respiration can indicate heat stress, illness, alcohol, or poor recovery.
@@ -53,6 +55,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - Read workout `notes` carefully; subjective notes may explain session changes, pain, stops, or perceived effort better than the numbers alone.
 - Zone 2 endurance work is `zone2_mins`. Zone 4-5 is high-intensity leakage or deliberate hard work.
 - Use `workout_weather` when interpreting unusually high HR, pace drift, heavy perceived effort, dehydration risk, or poor recovery after outdoor sessions.
+- Use `workout_routes.hard_surface_km`, `soft_surface_km`, and `distance_unknown_km` when interpreting tissue load, hard-surface conditioning, trail specificity, and symptom response. Surface data is OSM-inferred and should be treated as coaching context rather than exact surveying.
 - Use `strength_sets.weight_kg`, `reps`, and `set_order` to assess strength maintenance or progression.
 - Use `coach_decisions` to preserve why a coaching call was made, what data or session it was linked to, and when it should be reviewed. Keep routine rolling context in `coach/coach_notes.md`; use this table for decisions worth querying later.
 

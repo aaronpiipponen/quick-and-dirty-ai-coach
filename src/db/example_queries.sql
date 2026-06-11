@@ -1,5 +1,5 @@
 -- Example queries for src/db/user_data.db.
--- For compact session orientation, run: python src/session_quickstart.py
+-- For compact session orientation, run: python tools/session_quickstart.py
 -- Use these queries for targeted follow-up analysis.
 -- Run from the project root with:
 -- sqlite3 -column -header src/db/user_data.db < src/db/example_queries.sql
@@ -21,19 +21,23 @@ FROM workouts
 WHERE date >= date('now', '-28 days')
 ORDER BY date DESC;
 
--- Recent workouts with weather
+-- Recent workouts with weather and route surface context
 SELECT w.date, w.sport, w.name, w.distance_km, w.avg_hr,
        ww.avg_temp_c, ww.avg_humidity_pct, ww.precipitation_mm,
-       ww.avg_wind_kmh, ww.max_wind_gust_kmh
+       ww.avg_wind_kmh, ww.max_wind_gust_kmh,
+       r.hard_surface_km, r.soft_surface_km, r.distance_unknown_km
 FROM workouts w
 LEFT JOIN workout_weather ww ON ww.activity_id = w.activity_id
+LEFT JOIN workout_routes r ON r.activity_id = w.activity_id
 WHERE w.date >= date('now', '-28 days')
 ORDER BY w.date DESC;
 
 -- Route summary for a workout
 SELECT w.date, w.name, r.point_count,
        r.start_lat, r.start_lon, r.end_lat, r.end_lon,
-       r.center_lat, r.center_lon
+       r.center_lat, r.center_lon,
+       r.distance_asphalt_km, r.distance_gravel_km, r.distance_trail_km,
+       r.hard_surface_km, r.soft_surface_km, r.distance_unknown_km
 FROM workouts w
 JOIN workout_routes r ON r.activity_id = w.activity_id
 WHERE w.activity_id = (
@@ -42,6 +46,19 @@ WHERE w.activity_id = (
     ORDER BY activity_id DESC
     LIMIT 1
 );
+
+-- Downsampled surface segments for a workout
+SELECT sample_order, start_time_utc, end_time_utc, distance_km,
+       surface, surface_confidence, raw_surface, raw_highway, raw_tracktype,
+       match_distance_m
+FROM workout_surface_segments
+WHERE activity_id = (
+    SELECT activity_id
+    FROM workout_surface_segments
+    ORDER BY activity_id DESC
+    LIMIT 1
+)
+ORDER BY sample_order;
 
 -- Weekly running volume
 SELECT strftime('%Y-W%W', date) AS week,

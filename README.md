@@ -40,18 +40,20 @@ The repo is split into:
 - `src/sync.py`: sync CLI dispatcher for source adapters
 - `src/sources/`: source adapters
 - `src/sources/common.py`: shared adapter CLI helpers for database output and validation
+- `src/sources/workout_weather.py`: source-agnostic Open-Meteo enrichment for GPS workouts
+- `src/sources/workout_surfaces.py`: source-agnostic OSM/Overpass surface inference for GPS workout routes
 - `src/db/`: schema, database initialization, fabricated sample data, writer, and interpretation notes and example queries for the coach
-- `src/session_quickstart.py`: compact database orientation for a new session without prior context
+- `tools/session_quickstart.py`: compact database orientation for a new session without prior context
 - `.env.example`: required environment variables and local defaults
 
-The sync architecture is intentionally modular. `src/sync.py` handles top-level CLI parsing, source selection, database connection, and writer dispatch. Source-specific fetching lives in `src/sources/`, and database writes are centralized in `src/db/writer.py` against the schema in `src/db/schema.py`.
+The sync architecture is intentionally modular. `src/sync.py` handles top-level CLI parsing, source selection, database connection, and writer dispatch. Source-specific fetching lives in `src/sources/`, reusable workout enrichment lives in modules such as `src/sources/workout_weather.py` and `src/sources/workout_surfaces.py`, and database writes are centralized in `src/db/writer.py` against the schema in `src/db/schema.py`.
 
 In a working copy, the AI coach reads:
 
 - stable profile context
 - current coach notes
 - the user-facing training plan
-- compact database orientation from `python src/session_quickstart.py`
+- compact database orientation from `python tools/session_quickstart.py`
 - targeted SQL results from the local database
 - prior decisions from the `coach_decisions` table
 
@@ -70,7 +72,8 @@ Core tables:
 - `daily_summary`: sleep, HRV, readiness, resting HR, weight, stress, body battery, training load, and daily activity
 - `workouts`: activities, duration, distance, pace, HR, zones, notes, and downsampled datastreams
 - `strength_sets`: exercise-level strength set data
-- `workout_routes`: GPS route summaries and sampled coordinates
+- `workout_routes`: GPS route summaries, sampled coordinates, and route-level inferred surface totals
+- `workout_surface_segments`: downsampled OSM-inferred surface segments for GPS activities
 - `workout_weather`: Open-Meteo weather matched to GPS activity location and time
 - `coach_decisions`: past coaching decisions, follow-ups, status, and optional workout/date links
 
@@ -80,7 +83,7 @@ The `coach_decisions` table prevents the agent from treating every conversation 
 
 Current source adapters:
 
-- `garmin`: syncs daily health summaries, workouts, routes, Open-Meteo weather enrichment, and strength data from Garmin Connect.
+- `garmin`: syncs daily health summaries, workouts, routes, reusable Open-Meteo weather enrichment, reusable OSM surface enrichment, and strength data from Garmin Connect.
 - `sqlite_import`: imports compatible or mapped tables from another SQLite database, with planning, dry-run, auto-map, strict mapping, date filters, and per-table imports.
 
 Use `python src/sync.py --help` to list sources and `python src/sync.py <source> --help` for source-specific options. For SQLite imports with renamed source tables or columns, see `src/sources/sqlite_import_mapping.example.md`.
@@ -94,7 +97,7 @@ This is published as a portfolio/reference project, not as a ready-to-run produc
 - run `python src/sync.py --help` and `python src/sync.py <source> --help` before syncing data
 - run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
 - run `python tools/smoke_test.py` if you want to check that the demo database and core CLI paths still work
-- use `python src/session_quickstart.py` only after the database has been created and populated
+- use `python tools/session_quickstart.py` only after the database has been created and populated
 - adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
 
 The intended loop is simple: sync or import data, ask a training question through the agent CLI, and let the coach read the Markdown context plus SQLite summaries before answering.
@@ -126,6 +129,7 @@ Did yesterday's high heart rate look like fatigue, heat, or pacing drift?
 - SQL for durable, queryable facts and decisions
 - source adapters behind a small `src/sync.py` dispatcher for easier additions later on
 - Open-Meteo for historical weather enrichment on GPS activities
+- OSM/Overpass for route surface inference on GPS activities, stored as downsampled segments and route-level summaries
 - downsampled JSON streams for workout and day-level trends to keep data from bloating while preserving precision
 - CLI-first operation so it works over SSH and mobile terminals
 - no hard dependency on a pay-as-you-go LLM API in the personal workflow

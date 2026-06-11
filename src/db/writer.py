@@ -6,6 +6,7 @@ WRITE_ORDER = [
     "workouts",
     "strength_sets",
     "workout_routes",
+    "workout_surface_segments",
     "workout_weather",
     "coach_decisions",
 ]
@@ -22,8 +23,11 @@ def write_payload(conn, payload, conflict="update", dry_run=False):
     for activity_id in strength_deletes:
         c.execute("DELETE FROM strength_sets WHERE activity_id = ?", (activity_id,))
     for activity_id in route_weather_deletes:
+        c.execute("DELETE FROM workout_surface_segments WHERE activity_id = ?", (activity_id,))
         c.execute("DELETE FROM workout_routes WHERE activity_id = ?", (activity_id,))
         c.execute("DELETE FROM workout_weather WHERE activity_id = ?", (activity_id,))
+    for row in payload.get("workout_routes", []):
+        c.execute("DELETE FROM workout_surface_segments WHERE activity_id = ?", (row.get("activity_id"),))
 
     for table in WRITE_ORDER:
         rows = payload.get(table, [])

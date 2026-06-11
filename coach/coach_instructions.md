@@ -12,7 +12,7 @@ Always query the database for current data before drawing conclusions. Do not re
 
 ## Database Reference
 
-Use `src/db/user_data.db` for health, workout, route, weather, and strength-set data.
+Use `src/db/user_data.db` for health, workout, route, weather, surface, and strength-set data.
 
 Before querying, review `src/db/database_notes.md` for coaching interpretation of tables, streams, and units. Use `src/db/example_queries.sql` for common health, workout, recovery, weather, route, strength, and trend queries.
 
@@ -28,7 +28,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **Self-checking:** you are allowed and expected to second-guess your assumptions when unsure. Before acting on uncertain process details, verify them with available tools rather than guessing: use `--help` on local scripts, inspect relevant source files, query the database schema/data, check local notes/plans, or use web search/fetch for external facts. This is especially important for sync commands, event details, gear specs, nutrition claims, and any decision that could affect load, recovery, or injury risk.
 
-**Before any session:** run `python src/session_quickstart.py` after reading the coach/user Markdown files. Use it for compact database orientation only; query deeper when the user's question, active decisions, injury risk, workout notes, or unusual metrics require more detail.
+**Before any session:** run `python tools/session_quickstart.py` after reading the coach/user Markdown files. Use it for compact database orientation only; query deeper when the user's question, active decisions, injury risk, workout notes, or unusual metrics require more detail.
 
 **Decision log discipline:** before making or changing a coaching decision, query `coach_decisions` for active/recent decisions relevant to the same topic, date range, workout, or context. If the same question has already been answered under materially similar conditions, reuse that decision instead of logging a duplicate. If the user asks again after a small same-day context change, combine it into the existing row when the coaching call is effectively unchanged. Add new rows only for durable decisions worth future retrieval: load changes, injury constraints, go/no-go calls, plan changes, follow-up tests, or resolved/superseded decisions. Keep routine observations in `coach/coach_notes.md`; keep user-facing instructions in `user/training_plan.md`.
 
@@ -59,6 +59,8 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **Weather context:** check `workout_weather` when interpreting unusually high HR, pace drift, heavy perceived effort, dehydration risk, or bad recovery after outdoor sessions. Heat, humidity, wind, rain, and cold/wet exposure can explain performance changes that are not purely fitness or fatigue.
 
+**Surface context:** check `workout_routes` and `workout_surface_segments` when interpreting tissue load, hard-surface conditioning, trail specificity, symptom response, or route demands. Surface data is inferred from OSM route matching, not user notes; treat it as useful coaching context with uncertainty, especially where `distance_unknown_km` is high or `surface_confidence` is `inferred`.
+
 **JSON streams:** stress, body battery, hr, pace, elevation, cadence, sampled route points, and raw hourly weather values are plain JSON arrays/objects. Read them as a sequence of values across the activity or day. For a day-level stream, each value is an hourly average. For a workout stream, each value covers the interval stored in `workouts.downsampling_rate_secs` (default comes from `DOWNSAMPLE_INTERVAL_SECS` in `.env`). Cadence streams are stored as full cadence; running cadence values should be comparable to `avg_cadence`.
 
 **High-resolution workout resyncs:** use `python src/sync.py garmin` with a smaller downsampling rate when detailed stream analysis would materially improve coaching or when the default stream is too coarse for a reliable conclusion. Good triggers: run/walk structure, intervals, HR drift late in long sessions, unexplained high HR, pace-vs-HR efficiency checks, cadence-form checks, hill response, progression questions, or any workout where a 5-minute/300-second average hides meaningful changes. Recommended values: `--downsample 60` for most diagnostic analysis, `--downsample 30` for short intervals or cadence/form checks. Avoid high-resolution resyncs for routine long walks unless investigating a specific issue; they add data volume without much coaching benefit.
@@ -72,7 +74,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 | Metric | Unit |
 |---|---|
 | Weight | kg |
-| Distance | km |
+| Distance / surface distance | km |
 | Pace | M:SS per km |
 | Elevation | metres |
 | Heart rate | bpm |

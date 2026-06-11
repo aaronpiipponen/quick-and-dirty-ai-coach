@@ -4,9 +4,9 @@ from pathlib import Path
 import sqlite3
 
 try:
-    from .schema import SCHEMA_SQL
+    from .schema import MIGRATION_COLUMNS, SCHEMA_SQL
 except ImportError:
-    from schema import SCHEMA_SQL
+    from schema import MIGRATION_COLUMNS, SCHEMA_SQL
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +24,11 @@ def ensure_database(conn):
     c = conn.cursor()
     for statement in SCHEMA_SQL:
         c.execute(statement)
+    for table, columns in MIGRATION_COLUMNS.items():
+        existing = {row[1] for row in c.execute(f"PRAGMA table_info({table})")}
+        for column, definition in columns:
+            if column not in existing:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     conn.commit()
 

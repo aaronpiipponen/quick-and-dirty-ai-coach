@@ -158,15 +158,19 @@ def main():
         recent_workouts = rows(
             conn,
             """
-            SELECT date, sport, name, distance_km AS km,
+            SELECT w.date, w.sport, w.name, w.distance_km AS km,
                    moving_duration_mins AS moving_min,
-                   avg_moving_pace AS pace, avg_hr,
-                   zone2_mins AS z2,
-                   zone3_mins + zone4_mins + zone5_mins AS z3plus,
-                   notes
-            FROM workouts
-            WHERE date >= date(?, ?)
-            ORDER BY date DESC, activity_id DESC
+                   w.avg_moving_pace AS pace, w.avg_hr,
+                   w.zone2_mins AS z2,
+                   w.zone3_mins + w.zone4_mins + w.zone5_mins AS z3plus,
+                   r.hard_surface_km AS hard_km,
+                   r.soft_surface_km AS soft_km,
+                   r.distance_unknown_km AS unknown_km,
+                   w.notes
+            FROM workouts w
+            LEFT JOIN workout_routes r ON r.activity_id = w.activity_id
+            WHERE w.date >= date(?, ?)
+            ORDER BY w.date DESC, w.activity_id DESC
             LIMIT ?
             """,
             (anchor, f"-{args.days - 1} days", args.workouts),
@@ -183,6 +187,9 @@ def main():
                 ("avg_hr", 6),
                 ("z2", 5),
                 ("z3plus", 7),
+                ("hard_km", 7),
+                ("soft_km", 7),
+                ("unknown_km", 10),
                 ("notes", 72),
             ],
         )

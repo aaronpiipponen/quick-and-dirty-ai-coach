@@ -42,7 +42,15 @@ TABLE_COLUMNS = {
     "workout_routes": [
         "activity_id", "start_time_utc", "end_time_utc", "point_count", "start_lat",
         "start_lon", "end_lat", "end_lon", "min_lat", "max_lat", "min_lon",
-        "max_lon", "center_lat", "center_lon", "sampled_points_json",
+        "max_lon", "center_lat", "center_lon", "sampled_points_json", "surface_source",
+        "surface_total_km", "distance_asphalt_km", "distance_concrete_km",
+        "distance_paved_other_km", "distance_gravel_km", "distance_trail_km",
+        "distance_unknown_km", "hard_surface_km", "soft_surface_km", "surface_breakdown_json",
+    ],
+    "workout_surface_segments": [
+        "activity_id", "sample_order", "start_time_utc", "end_time_utc", "distance_km",
+        "surface", "surface_source", "surface_confidence", "raw_surface", "raw_highway",
+        "raw_tracktype", "match_distance_m", "tags_json",
     ],
     "workout_weather": [
         "activity_id", "weather_source", "latitude", "longitude", "start_time_utc",
@@ -61,6 +69,7 @@ PRIMARY_KEYS = {
     "workouts": ["activity_id"],
     "strength_sets": ["activity_id", "set_order"],
     "workout_routes": ["activity_id"],
+    "workout_surface_segments": ["activity_id", "sample_order"],
     "workout_weather": ["activity_id"],
     "coach_decisions": ["decision_id"],
 }
@@ -157,7 +166,35 @@ SCHEMA_SQL = [
         center_lat          REAL,
         center_lon          REAL,
         sampled_points_json TEXT,
+        surface_source      TEXT,
+        surface_total_km    REAL,
+        distance_asphalt_km REAL,
+        distance_concrete_km REAL,
+        distance_paved_other_km REAL,
+        distance_gravel_km  REAL,
+        distance_trail_km   REAL,
+        distance_unknown_km REAL,
+        hard_surface_km     REAL,
+        soft_surface_km     REAL,
+        surface_breakdown_json TEXT,
         FOREIGN KEY(activity_id) REFERENCES workouts(activity_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS workout_surface_segments (
+        activity_id         INTEGER,
+        sample_order        INTEGER,
+        start_time_utc      TEXT,
+        end_time_utc        TEXT,
+        distance_km         REAL,
+        surface             TEXT,
+        surface_source      TEXT,
+        surface_confidence  TEXT,
+        raw_surface         TEXT,
+        raw_highway         TEXT,
+        raw_tracktype       TEXT,
+        match_distance_m    REAL,
+        tags_json           TEXT,
+        PRIMARY KEY (activity_id, sample_order),
+        FOREIGN KEY(activity_id) REFERENCES workout_routes(activity_id)
     )""",
     """CREATE TABLE IF NOT EXISTS workout_weather (
         activity_id          INTEGER PRIMARY KEY,
@@ -195,3 +232,19 @@ SCHEMA_SQL = [
         FOREIGN KEY(linked_activity_id) REFERENCES workouts(activity_id)
     )""",
 ]
+
+MIGRATION_COLUMNS = {
+    "workout_routes": [
+        ("surface_source", "TEXT"),
+        ("surface_total_km", "REAL"),
+        ("distance_asphalt_km", "REAL"),
+        ("distance_concrete_km", "REAL"),
+        ("distance_paved_other_km", "REAL"),
+        ("distance_gravel_km", "REAL"),
+        ("distance_trail_km", "REAL"),
+        ("distance_unknown_km", "REAL"),
+        ("hard_surface_km", "REAL"),
+        ("soft_surface_km", "REAL"),
+        ("surface_breakdown_json", "TEXT"),
+    ],
+}

@@ -70,12 +70,32 @@ INSERT OR REPLACE INTO strength_sets (
 INSERT OR REPLACE INTO workout_routes (
     activity_id, start_time_utc, end_time_utc, point_count, start_lat,
     start_lon, end_lat, end_lon, min_lat, max_lat, min_lon, max_lon,
-    center_lat, center_lon, sampled_points_json
+    center_lat, center_lon, sampled_points_json, surface_source, surface_total_km,
+    distance_asphalt_km, distance_concrete_km, distance_paved_other_km,
+    distance_gravel_km, distance_trail_km, distance_unknown_km,
+    hard_surface_km, soft_surface_km, surface_breakdown_json
 ) VALUES
 (9003, '2026-06-09T08:00:00+00:00', '2026-06-09T09:28:00+00:00', 420,
- 60.1700, 24.9400, 60.1760, 24.9520, 60.1680, 60.1810, 24.9360, 24.9580,
- 60.1745, 24.9470,
- '[{"t":"2026-06-09T08:00:00+00:00","lat":60.170000,"lon":24.940000},{"t":"2026-06-09T08:30:00+00:00","lat":60.174000,"lon":24.946000},{"t":"2026-06-09T09:00:00+00:00","lat":60.181000,"lon":24.958000},{"t":"2026-06-09T09:28:00+00:00","lat":60.176000,"lon":24.952000}]');
+  60.1700, 24.9400, 60.1760, 24.9520, 60.1680, 60.1810, 24.9360, 24.9580,
+  60.1745, 24.9470,
+  '[{"t":"2026-06-09T08:00:00+00:00","lat":60.170000,"lon":24.940000},{"t":"2026-06-09T08:30:00+00:00","lat":60.174000,"lon":24.946000},{"t":"2026-06-09T09:00:00+00:00","lat":60.181000,"lon":24.958000},{"t":"2026-06-09T09:28:00+00:00","lat":60.176000,"lon":24.952000}]',
+  'sample-osm', 10.8, 1.6, 0.0, 0.4, 5.8, 3.0, 0.0, 2.0, 8.8,
+  '{"asphalt": 1.6, "concrete": 0.0, "gravel": 5.8, "paved_other": 0.4, "trail": 3.0, "unknown": 0.0}');
+
+INSERT OR REPLACE INTO workout_surface_segments (
+    activity_id, sample_order, start_time_utc, end_time_utc, distance_km,
+    surface, surface_source, surface_confidence, raw_surface, raw_highway,
+    raw_tracktype, match_distance_m, tags_json
+) VALUES
+(9003, 1, '2026-06-09T08:00:00+00:00', '2026-06-09T08:30:00+00:00', 3.2,
+ 'gravel', 'sample-osm', 'tagged', 'fine_gravel', 'track', 'grade2', 8.0,
+ '{"highway":"track","surface":"fine_gravel","tracktype":"grade2"}'),
+(9003, 2, '2026-06-09T08:30:00+00:00', '2026-06-09T09:00:00+00:00', 4.6,
+ 'trail', 'sample-osm', 'inferred', NULL, 'path', NULL, 12.0,
+ '{"highway":"path"}'),
+(9003, 3, '2026-06-09T09:00:00+00:00', '2026-06-09T09:28:00+00:00', 3.0,
+ 'asphalt', 'sample-osm', 'tagged', 'asphalt', 'service', NULL, 5.0,
+ '{"highway":"service","surface":"asphalt"}');
 
 INSERT OR REPLACE INTO workout_weather (
     activity_id, weather_source, latitude, longitude, start_time_utc,
