@@ -28,7 +28,7 @@ EPILOG = """examples:
   python src/sync.py garmin
   python src/sync.py garmin --date 2026-06-10
   python src/sync.py garmin --workout 123456789 --downsample 60
-  python src/sync.py garmin --surfaces-only --since 2026-06-01
+  python src/sync.py garmin --routes-only --since 2026-06-01
   python src/sync.py garmin --since 2026-06-01 --until 2026-06-07
 """
 
@@ -81,9 +81,9 @@ def add_arguments(parser):
         help="Skip OSM-based workout surface matching for this sync.",
     )
     parser.add_argument(
-        "--surfaces-only",
+        "--routes-only",
         action="store_true",
-        help="Backfill only route surface data for existing workouts in the target database.",
+        help="Refresh route and surface data for existing workouts in the target database.",
     )
 
 
@@ -95,8 +95,8 @@ def validate_args(parser, args):
         parser.error("--workout cannot be combined with --since or --until")
     if args.downsample <= 0:
         parser.error("--downsample must be greater than 0")
-    if args.surfaces_only and args.skip_surfaces:
-        parser.error("--surfaces-only cannot be combined with --skip-surfaces")
+    if args.routes_only and args.skip_surfaces:
+        parser.error("--routes-only cannot be combined with --skip-surfaces")
 
 
 def login_with_cache(api, tokenstore):
@@ -344,8 +344,8 @@ def downsample_metrics(details, total_duration_mins, interval_secs):
 def fetch(args, conn):
     api = init_api()
     payload = empty_payload()
-    if args.surfaces_only:
-        backfill_surface_payload(api, conn, payload, args)
+    if args.routes_only:
+        backfill_route_payload(api, conn, payload, args)
         return payload
     if args.workout:
         print(f"Single-workout mode: syncing {args.workout}")
@@ -424,23 +424,23 @@ def get_workout_range(conn, backfill_date, today):
     return backfill_date, today
 
 
-def backfill_surface_payload(api, conn, payload, args):
+def backfill_route_payload(api, conn, payload, args):
     if conn is None:
-        raise ValueError("--surfaces-only requires a writable target database")
-    rows = surface_backfill_workouts(conn, args)
-    print(f"Surface-only mode: processing {len(rows)} existing workouts")
-    print(f"Surface stream downsampling: {args.downsample} sec")
+        raise ValueError("--routes-only requires a writable target database")
+    rows = route_backfill_workouts(conn, args)
+    print(f"Routes-only mode: processing {len(rows)} existing workouts")
+    print(f"Route stream downsampling: {args.downsample} sec")
     for row in rows:
         activity_id = row["activity_id"]
-        print(f"Processing surfaces for {row['date']} {row['sport']} (id: {activity_id})...")
+        print(f"Processing route data for {row['date']} {row['sport']} (id: {activity_id})...")
         try:
             details = api.get_activity_details(activity_id)
             add_route_surfaces(payload, activity_id, details, args.downsample)
         except Exception as e:
-            print(f"  Surfaces unavailable for activity {activity_id}: {e}")
+            print(f"  Route data unavailable for activity {activity_id}: {e}")
 
 
-def surface_backfill_workouts(conn, args):
+def route_backfill_workouts(conn, args):
     where = [
         f"w.sport IN ({', '.join('?' for _ in CARDIO_SPORTS)})",
         "r.activity_id IS NOT NULL",
