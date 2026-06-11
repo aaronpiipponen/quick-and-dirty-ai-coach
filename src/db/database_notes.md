@@ -32,7 +32,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 
 - `daily_summary`: one row per calendar day; primary source for health, sleep, recovery, HRV, training readiness, training load, and daily activity trends.
 - `workouts`: one row per Garmin activity; primary source for endurance volume, intensity distribution, pacing, workout notes, and session-level load.
-- `workout_routes`: GPS route summary, sampled coordinates, and OSM-inferred route-level surface totals for tracked cardio workouts.
+- `workout_routes`: GPS route summary, downsampled coordinates, and OSM-inferred route-level surface totals for tracked cardio workouts.
 - `workout_surface_segments`: downsampled OSM-inferred surface segments for tracked cardio routes. Segment cadence follows the workout sync downsample interval.
 - `workout_weather`: Open-Meteo weather matched to GPS workout route center and time window.
 - `strength_sets`: active exercise sets from strength sessions; REST periods are excluded.
@@ -42,6 +42,7 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 
 - Day-level streams in `daily_summary` are ordered hourly averages from Garmin timestamps.
 - Workout streams in `workouts` use the interval in `workouts.downsampling_rate_secs`; default comes from `DOWNSAMPLE_INTERVAL_SECS` in `.env`.
+- Route points in `workout_routes.sampled_points_json` use the same downsample interval as workout streams. `workout_routes.point_count` remains the raw Garmin GPS point count before route downsampling.
 - Surface rows in `workout_surface_segments` use the same downsample interval as workout streams, but each row's distance is accumulated from the full raw GPS points inside that bucket.
 - `stress_stream` uses Garmin's 0-100 stress scale. Values above ~50 are elevated.
 - `body_battery_stream` uses Garmin's 0-100 body battery scale. Values below ~25 suggest fatigue.
@@ -49,6 +50,11 @@ SQLite supports `json_array_length()` and `json_each()` for stream columns, but 
 - `hr_stream` is heart rate in bpm.
 - `pace_stream` values are pace strings in `M:SS` per km. Faster means a lower value.
 - `cadence_stream` stores full cadence. Running cadence values should be comparable to `avg_cadence`.
+- `sampled_points_json` is a JSON array of `{t, lat, lon}` objects at the workout downsample interval. Use it for route shape/context, not raw GPS replay.
+
+## Maintenance Syncs
+
+Use `python src/sync.py garmin --routes-only` to refresh route summaries, downsampled route points, and surface segments for workouts already in the database. Add date/workout filters for bounded runs. This is useful after changing route/surface sampling rules or when reprocessing route context without touching daily summaries, weather, strength sets, or workout scalar fields.
 
 ## Coaching Interpretation
 

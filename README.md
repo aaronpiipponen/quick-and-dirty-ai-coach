@@ -72,7 +72,7 @@ Core tables:
 - `daily_summary`: sleep, HRV, readiness, resting HR, weight, stress, body battery, training load, and daily activity
 - `workouts`: activities, duration, distance, pace, HR, zones, notes, and downsampled datastreams
 - `strength_sets`: exercise-level strength set data
-- `workout_routes`: GPS route summaries, sampled coordinates, and route-level inferred surface totals
+- `workout_routes`: GPS route summaries, downsampled coordinates, and route-level inferred surface totals
 - `workout_surface_segments`: downsampled OSM-inferred surface segments for GPS activities
 - `workout_weather`: Open-Meteo weather matched to GPS activity location and time
 - `coach_decisions`: past coaching decisions, follow-ups, status, and optional workout/date links
@@ -130,7 +130,7 @@ Did yesterday's high heart rate look like fatigue, heat, or pacing drift?
 - source adapters behind a small `src/sync.py` dispatcher for easier additions later on
 - Open-Meteo for historical weather enrichment on GPS activities
 - OSM/Overpass for route surface inference on GPS activities, stored as downsampled segments and route-level summaries
-- downsampled JSON streams for workout and day-level trends to keep data from bloating while preserving precision
+- downsampled workout, route, and day-level streams to keep the database compact while preserving enough detail for coaching decisions
 - CLI-first operation so it works over SSH and mobile terminals
 - no hard dependency on a pay-as-you-go LLM API in the personal workflow
 
