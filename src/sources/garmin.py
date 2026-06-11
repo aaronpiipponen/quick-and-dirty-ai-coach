@@ -249,15 +249,14 @@ def extract_route_points(details):
     return points
 
 
-def summarize_route(points, sample_limit=250):
+def summarize_route(points, interval_secs):
     if not points:
         return None
     lats = [p[1] for p in points]
     lons = [p[2] for p in points]
-    step = max(1, len(points) // sample_limit)
     sampled = [
         {"t": iso_utc(ts), "lat": round(lat, 6), "lon": round(lon, 6)}
-        for ts, lat, lon in points[::step]
+        for ts, lat, lon in downsample_route_points(points, interval_secs)
     ]
     return {
         "start_time_utc": iso_utc(points[0][0]),
@@ -275,6 +274,21 @@ def summarize_route(points, sample_limit=250):
         "center_lon": sum(lons) / len(lons),
         "sampled_points_json": json.dumps(sampled),
     }
+
+
+def downsample_route_points(points, interval_secs):
+    if not points:
+        return []
+    interval_ms = int(interval_secs * 1000)
+    sampled = [points[0]]
+    next_ts = points[0][0] + interval_ms
+    for point in points[1:-1]:
+        if point[0] >= next_ts:
+            sampled.append(point)
+            next_ts = point[0] + interval_ms
+    if sampled[-1] != points[-1]:
+        sampled.append(points[-1])
+    return sampled
 
 
 def downsample_metrics(details, total_duration_mins, interval_secs):
@@ -712,7 +726,7 @@ def build_workout_payload(api, act, downsample, skip_surfaces=False):
 
 def add_route_weather_and_surfaces(payload, activity_id, details, downsample, skip_surfaces=False):
     points = extract_route_points(details)
-    route = summarize_route(points)
+    route = summarize_route(points, downsample)
     if not route:
         payload["delete_route_weather_activity_ids"].append(activity_id)
         return
@@ -736,7 +750,7 @@ def add_route_weather_and_surfaces(payload, activity_id, details, downsample, sk
 
 def add_route_surfaces(payload, activity_id, details, downsample):
     points = extract_route_points(details)
-    route = summarize_route(points)
+    route = summarize_route(points, downsample)
     if not route:
         return
     add_surface_rows(payload, activity_id, points, route, downsample)
