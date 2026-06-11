@@ -43,7 +43,7 @@ The repo is split into:
 - `src/sources/workout_weather.py`: source-agnostic Open-Meteo enrichment for GPS workouts
 - `src/sources/workout_surfaces.py`: source-agnostic OSM/Overpass surface inference for GPS workout routes
 - `src/db/`: schema, database initialization, fabricated sample data, writer, and interpretation notes and example queries for the coach
-- `tools/session_quickstart.py`: compact database orientation for a new session without prior context
+- `tools/coach_context.py`: profile-driven database context tool for the AI coach
 - `.env.example`: required environment variables and local defaults
 
 The sync architecture is intentionally modular. `src/sync.py` handles top-level CLI parsing, source selection, database connection, and writer dispatch. Source-specific fetching lives in `src/sources/`, reusable workout enrichment lives in modules such as `src/sources/workout_weather.py` and `src/sources/workout_surfaces.py`, and database writes are centralized in `src/db/writer.py` against the schema in `src/db/schema.py`.
@@ -53,7 +53,7 @@ In a working copy, the AI coach reads:
 - stable profile context
 - current coach notes
 - the user-facing training plan
-- compact database orientation from `python tools/session_quickstart.py`
+- profile-driven database context from `python tools/coach_context.py`
 - targeted SQL results from the local database
 - prior decisions from the `coach_decisions` table
 
@@ -97,7 +97,6 @@ This is published as a portfolio/reference project, not as a ready-to-run produc
 - run `python src/sync.py --help` and `python src/sync.py <source> --help` before syncing data
 - run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
 - run `python tools/smoke_test.py` if you want to check that the demo database and core CLI paths still work
-- use `python tools/session_quickstart.py` only after the database has been created and populated
 - adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
 
 The intended loop is simple: sync or import data, ask a training question through the agent CLI, and let the coach read the Markdown context plus SQLite summaries before answering.

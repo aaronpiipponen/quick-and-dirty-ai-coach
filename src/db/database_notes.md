@@ -9,10 +9,10 @@ Use `src/db/schema.py` as the structural source of truth for table and column de
 For compact new-session orientation, run:
 
 ```bash
-python tools/session_quickstart.py
+python tools/coach_context.py
 ```
 
-Use that output as a starting point, then query this database directly for the specific question or risk being evaluated.
+Use that output as a starting point, then query this database directly for any specific question or risk that still needs deeper detail.
 
 Run ad hoc queries from the project root with:
 

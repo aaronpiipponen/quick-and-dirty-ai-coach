@@ -46,11 +46,11 @@ def main():
         bad_map = tmp_path / "bad_mapping.json"
 
         run(["src/db/init.py", "--db", str(sample_db), "--sample"])
-        quickstart = run(["tools/session_quickstart.py", "--db", str(sample_db)])
-        if "Anchor date: 2026-06-10" not in quickstart.stdout:
-            raise SystemExit("Smoke test failed: sample quickstart anchor date was not 2026-06-10")
-        if "calf_load" not in quickstart.stdout:
-            raise SystemExit("Smoke test failed: sample quickstart did not include calf decision")
+        context = run(["tools/coach_context.py", "--db", str(sample_db)])
+        if "Anchor date: 2026-06-10" not in context.stdout:
+            raise SystemExit("Smoke test failed: sample coach context anchor date was not 2026-06-10")
+        if "calf_load" not in context.stdout:
+            raise SystemExit("Smoke test failed: sample coach context did not include calf decision")
 
         run(["src/sync.py", "--help"])
         run(["src/sync.py", "sqlite_import", "--help"])
