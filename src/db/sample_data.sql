@@ -40,7 +40,7 @@ INSERT OR REPLACE INTO workouts (
  'Comfortable aerobic effort. Calf felt normal during run.',
  46.0, 6.4, '7:11', 136, 154, 162, 45, 44, 7600, 430,
  18, 25, 3, 0, 0,
- '[118,126,134,138,141,139,136,132]', '[7:45,7:22,7:08,7:02,7:05,7:12,7:18,7:30]',
+ '[118,126,134,138,141,139,136,132]', '["7:45","7:22","7:08","7:02","7:05","7:12","7:18","7:30"]',
  '[102,108,115,120,118,112,106,101]', '[158,160,162,164,163,162,160,158]',
  44.5, 46.0, '6:57', 300),
 (9002, '2026-06-07', 'strength_training', 'Strength maintenance',
@@ -53,7 +53,7 @@ INSERT OR REPLACE INTO workouts (
  'Felt good aerobically but calf tightened on climbs after 70 minutes. Kept effort easy and walked steeper hills.',
  88.0, 10.8, '8:09', 143, 166, 158, 215, 214, 13400, 820,
  22, 54, 10, 2, 0,
- '[122,132,139,143,146,149,152,148,142]', '[8:40,8:18,8:05,7:58,8:02,8:25,8:55,8:35,8:12]',
+ '[122,132,139,143,146,149,152,148,142]', '["8:40","8:18","8:05","7:58","8:02","8:25","8:55","8:35","8:12"]',
  '[110,128,152,185,210,238,260,220,145]', '[154,156,158,160,159,157,154,156,158]',
  84.0, 88.0, '7:47', 300);
 
@@ -156,7 +156,7 @@ INSERT OR REPLACE INTO coach_decisions (
     decision_id, date, topic, decision, reason, linked_activity_id,
     linked_date, status, next_review_date
 ) VALUES
-(1, '2026-06-09', 'calf_load',
+(1, '2026-06-09', 'injury',
  'Keep the next endurance session easy and avoid hills until calf stiffness returns to baseline.',
  'Long trail session produced calf tightness on climbs after 70 minutes while readiness was low.',
  9003, '2026-06-09', 'active', '2026-06-11');

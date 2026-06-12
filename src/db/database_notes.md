@@ -86,7 +86,7 @@ Use `python src/sync.py garmin --routes-only` to refresh route summaries, downsa
 Before making or changing a coaching decision, query this table for active/recent rows in the same topic, date range, workout, or context. If the same question has already been answered under materially similar conditions, reuse or update the existing row instead of inserting a duplicate. Same-day repeated questions with the same effective coaching call should usually be one combined entry. Mark rows `resolved` or `superseded` when they no longer apply.
 
 - `date`: date the decision applies to or was made.
-- `topic`: short category such as `load`, `injury`, `event`, `nutrition`, `gear`, or `strength`.
+- `topic`: use only one canonical category from this set: `load`, `injury`, `event`, `nutrition`, `gear`, `strength`. Do not create custom topic variants; keep extra specificity in `decision` and `reason`.
 - `decision`: concise coaching call.
 - `reason`: brief rationale, including the decisive context.
 - `linked_activity_id`: optional Garmin activity link when the decision came from a workout.
