@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB_FILE = PROJECT_ROOT / "src" / "db" / "user_data.db"
 
 PROFILE_SECTIONS = {
-    "overview": ["recent_health", "weekly_volume", "recent_workouts", "active_decisions", "weighins", "derived_flags"],
+    "overview": ["recent_health", "weekly_volume", "recent_workouts", "active_decisions", "due_reviews", "weighins", "derived_flags"],
     "injury": ["injury_decisions", "symptom_notes", "surface_exposure", "workouts_next_day", "long_walks", "derived_flags"],
     "load": ["load_summary", "weekly_volume", "recovery_trend", "recent_workouts", "derived_flags"],
     "event": ["event_decisions", "long_walks", "surface_specificity", "pack_fuel_notes", "recovery_trend", "derived_flags"],
@@ -59,7 +59,7 @@ def parse_args():
 def section_names():
     return {
         "active_decisions", "daily_calories", "day_decisions", "day_health", "day_recovery_context",
-        "day_workouts", "derived_flags", "event_decisions", "injury_decisions", "load_summary",
+        "day_workouts", "derived_flags", "due_reviews", "event_decisions", "injury_decisions", "load_summary",
         "long_session_fueling", "long_walks", "nutrition_notes", "pack_fuel_notes", "recent_health",
         "recent_workouts", "recovery_trend", "strength_decisions", "strength_gap", "strength_progression",
         "strength_sessions", "surface_exposure", "surface_specificity", "symptom_notes", "weekly_volume",
@@ -255,6 +255,33 @@ def section_active_decisions(conn, args, anchor, topics=None, title="Active Coac
         (*params, limit_for(args, 8, 5)),
     )
     print_rows(title, data, [("id", 4), ("date", 10), ("topic", 10), ("review", 10), ("decision", 86)])
+
+
+def due_review_rows(conn, anchor):
+    return rows(
+        conn,
+        """
+        SELECT decision_id AS id, date, topic, next_review_date AS review, decision
+        FROM coach_decisions
+        WHERE status = 'active'
+          AND next_review_date IS NOT NULL
+          AND next_review_date <= ?
+        ORDER BY next_review_date, decision_id
+        """,
+        (anchor,),
+    )
+
+
+def section_due_reviews(conn, args, anchor):
+    data = due_review_rows(conn, anchor)
+    if not data:
+        print_lines("Due Decision Reviews", ["No due reviews."])
+        return
+    ids = ", ".join(str(row["id"]) for row in data)
+    lines = [f"{len(data)} due review(s): ids {ids}"]
+    for row in data[:limit_for(args, 5, 3)]:
+        lines.append(f"id {row['id']} | review {row['review']} | topic {row['topic']} | {clip(row['decision'], 72)}")
+    print_lines("Due Decision Reviews", lines)
 
 
 def section_weighins(conn, args, anchor):
@@ -847,6 +874,7 @@ SECTION_FUNCS = {
     "day_recovery_context": section_day_recovery_context,
     "day_workouts": section_day_workouts,
     "derived_flags": section_derived_flags,
+    "due_reviews": section_due_reviews,
     "load_summary": section_load_summary,
     "long_session_fueling": section_long_session_fueling,
     "long_walks": section_long_walks,
