@@ -8,7 +8,7 @@ import time
 from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError
 
 from sources.common import add_database_arguments, validate_date_range
-from sources.workout_surfaces import analyze_route_surfaces
+from sources.workout_surfaces import analyze_route_surfaces, surface_sync_enabled
 from sources.workout_weather import fetch_open_meteo_weather, summarize_weather
 
 
@@ -84,6 +84,11 @@ def add_arguments(parser):
         "--routes-only",
         action="store_true",
         help="Refresh route and surface data for existing workouts in the target database.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-fetch and rewrite workouts even when equivalent enriched rows already exist.",
     )
 
 
@@ -381,6 +386,10 @@ def fetch(args, conn):
     print(f"Fetching workouts from {workout_start} to {workout_end}...")
     activities = api.get_activities_by_date(workout_start.isoformat(), workout_end.isoformat())
     for act in activities:
+        if conn and not args.force and workout_enrichment_complete(conn, act, args.downsample, args.skip_surfaces):
+            activity_id = act.get("activityId")
+            print(f"Skipping already enriched workout {activity_id}")
+            continue
         merge_payload(payload, build_workout_payload(api, act, args.downsample, args.skip_surfaces))
     return payload
 
@@ -422,6 +431,46 @@ def get_workout_range(conn, backfill_date, today):
     if row and row[0]:
         return datetime.date.fromisoformat(row[0]) - datetime.timedelta(days=1), today
     return backfill_date, today
+
+
+def workout_enrichment_complete(conn, act, downsample, skip_surfaces):
+    activity_id = act.get("activityId")
+    activity_type = act.get("activityType") or act.get("activityTypeDTO") or {}
+    sport = activity_type.get("typeKey")
+    if not activity_id or not sport:
+        return False
+
+    row = conn.execute(
+        "SELECT downsampling_rate_secs FROM workouts WHERE activity_id = ?",
+        (activity_id,),
+    ).fetchone()
+    if not row or row[0] is None or float(row[0]) != float(downsample):
+        return False
+
+    if sport in STRENGTH_SPORTS:
+        return True
+    if sport not in CARDIO_SPORTS:
+        return True
+
+    route = conn.execute(
+        """
+        SELECT r.activity_id, r.surface_source, COUNT(s.sample_order) AS surface_segments,
+               ww.activity_id AS weather_activity_id
+        FROM workout_routes r
+        LEFT JOIN workout_surface_segments s ON s.activity_id = r.activity_id
+        LEFT JOIN workout_weather ww ON ww.activity_id = r.activity_id
+        WHERE r.activity_id = ?
+        GROUP BY r.activity_id
+        """,
+        (activity_id,),
+    ).fetchone()
+    if not route:
+        return False
+    if route[3] is None:
+        return False
+    if not skip_surfaces and surface_sync_enabled() and (route[1] is None or route[2] == 0):
+        return False
+    return True
 
 
 def backfill_route_payload(api, conn, payload, args):

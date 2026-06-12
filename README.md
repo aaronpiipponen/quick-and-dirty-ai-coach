@@ -128,7 +128,7 @@ Did yesterday's high heart rate look like fatigue, heat, or pacing drift?
 - SQL for durable, queryable facts and decisions
 - source adapters behind a small `src/sync.py` dispatcher for easier additions later on
 - Open-Meteo for historical weather enrichment on GPS activities
-- OSM/Overpass for route surface inference on GPS activities, stored as downsampled segments and route-level summaries
+- OSM/Overpass for route surface inference on GPS activities, stored as downsampled segments and route-level summaries, with private OSM tile caching for overlapping routes
 - downsampled workout, route, and day-level streams to keep the database compact while preserving enough detail for coaching decisions
 - CLI-first operation so it works over SSH and mobile terminals
 - no hard dependency on a pay-as-you-go LLM API in the personal workflow

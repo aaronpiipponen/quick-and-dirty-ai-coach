@@ -8,3 +8,5 @@ __pycache__/
 .garminconnect/
 tokens/
 cache/
+src/cache/
+*.cache.db

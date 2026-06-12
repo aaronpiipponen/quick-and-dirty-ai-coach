@@ -2,12 +2,15 @@ import datetime
 import json
 import math
 import os
+import sqlite3
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 
 DEFAULT_OVERPASS_URLS = "https://overpass-api.de/api/interpreter,https://overpass.openstreetmap.fr/api/interpreter"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OVERPASS_URLS = [
     url.strip()
     for url in os.getenv("SURFACE_OVERPASS_URLS", os.getenv("SURFACE_OVERPASS_URL", DEFAULT_OVERPASS_URLS)).split(",")
@@ -18,6 +21,10 @@ SURFACE_MATCH_RADIUS_M = float(os.getenv("SURFACE_MATCH_RADIUS_M", "50"))
 SURFACE_BBOX_MARGIN_DEGREES = float(os.getenv("SURFACE_BBOX_MARGIN_DEGREES", "0.002"))
 SURFACE_OVERPASS_RETRIES = int(os.getenv("SURFACE_OVERPASS_RETRIES", "2"))
 SURFACE_OVERPASS_RETRY_WAIT_SECS = float(os.getenv("SURFACE_OVERPASS_RETRY_WAIT_SECS", "2"))
+SURFACE_CACHE_ENABLED = os.getenv("SURFACE_CACHE_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+SURFACE_CACHE_TILE_DEGREES = float(os.getenv("SURFACE_CACHE_TILE_DEGREES", "0.01"))
+SURFACE_CACHE_VERSION = os.getenv("SURFACE_CACHE_VERSION", "v1")
+SURFACE_CACHE_FILE = os.getenv("SURFACE_CACHE_FILE", "src/cache/osm_surface_cache.db")
 SURFACE_SOURCE = "overpass-osm"
 
 SURFACE_GROUPS = ["asphalt", "concrete", "paved_other", "gravel", "trail", "unknown"]
@@ -35,9 +42,21 @@ PAVED_HIGHWAYS = {
 }
 TRAIL_HIGHWAYS = {"path", "footway", "bridleway", "steps", "pedestrian"}
 
+OVERPASS_SELECTORS = [
+    ("surface", 'way["highway"]["surface"]'),
+    ("tracktype", 'way["highway"]["tracktype"]'),
+    ("trailish", 'way["highway"~"^(path|footway|track|bridleway|steps|pedestrian)$"]'),
+    ("roads", 'way["highway"~"^(residential|living_street|service|unclassified|cycleway|tertiary|secondary|primary)$"]'),
+]
+
 
 def surface_sync_enabled():
     return os.getenv("SURFACE_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def resolve_cache_file():
+    path = Path(SURFACE_CACHE_FILE)
+    return path if path.is_absolute() else PROJECT_ROOT / path
 
 
 def iso_utc(ts_ms):
@@ -108,20 +127,28 @@ def downsample_route_segments(points, interval_secs):
 def fetch_overpass_ways(points):
     ways = {}
     south, west, north, east = bbox(points, SURFACE_BBOX_MARGIN_DEGREES)
-    queries = [
-        f"way[\"highway\"][\"surface\"]({south:.6f},{west:.6f},{north:.6f},{east:.6f});",
-        f"way[\"highway\"][\"tracktype\"]({south:.6f},{west:.6f},{north:.6f},{east:.6f});",
-        (
-            f"way[\"highway\"~\"^(path|footway|track|bridleway|steps|pedestrian)$\"]"
-            f"({south:.6f},{west:.6f},{north:.6f},{east:.6f});"
-        ),
-        (
-            f"way[\"highway\"~\"^(residential|living_street|service|unclassified|cycleway|tertiary|secondary|primary)$\"]"
-            f"({south:.6f},{west:.6f},{north:.6f},{east:.6f});"
-        ),
-    ]
-    for selector in queries:
-        query = f"[out:json][timeout:25];({selector});out tags geom;"
+    if not SURFACE_CACHE_ENABLED:
+        return fetch_overpass_ways_for_bbox(south, west, north, east)
+    cache = SurfaceCache()
+    for tile in tiles_for_bbox(south, west, north, east):
+        for selector_name, selector in OVERPASS_SELECTORS:
+            try:
+                data = fetch_selector_tile(selector_name, selector, tile, cache)
+            except Exception:
+                continue
+            for element in data.get("elements", []):
+                if element.get("type") != "way" or not element.get("geometry"):
+                    continue
+                if not way_intersects_bbox(element["geometry"], south, west, north, east):
+                    continue
+                add_way_fragment(ways, element)
+    return list(ways.values())
+
+
+def fetch_overpass_ways_for_bbox(south, west, north, east):
+    ways = {}
+    for _, selector in OVERPASS_SELECTORS:
+        query = f"[out:json][timeout:25];({selector}({south:.6f},{west:.6f},{north:.6f},{east:.6f}););out tags geom;"
         try:
             data = post_overpass(query)
         except Exception:
@@ -129,8 +156,122 @@ def fetch_overpass_ways(points):
         for element in data.get("elements", []):
             if element.get("type") != "way" or not element.get("geometry"):
                 continue
-            ways[element["id"]] = element
+            add_way_fragment(ways, element)
     return list(ways.values())
+
+
+def way_intersects_bbox(geometry, south, west, north, east):
+    return any(south <= point.get("lat", 0) <= north and west <= point.get("lon", 0) <= east for point in geometry)
+
+
+def add_way_fragment(ways, element):
+    way_id = element["id"]
+    geometry = element.get("geometry") or []
+    if way_id not in ways:
+        element["geometry_parts"] = [geometry]
+        ways[way_id] = element
+        return
+    existing = ways[way_id]
+    existing.setdefault("geometry_parts", [existing.get("geometry", [])])
+    if not any(same_geometry(geometry, part) for part in existing["geometry_parts"]):
+        existing["geometry_parts"].append(geometry)
+    if len(geometry) > len(existing.get("geometry", [])):
+        existing["geometry"] = geometry
+    existing.setdefault("tags", {}).update(element.get("tags", {}))
+
+
+def same_geometry(a, b):
+    if len(a) != len(b):
+        return False
+    return all(point_a.get("lat") == point_b.get("lat") and point_a.get("lon") == point_b.get("lon") for point_a, point_b in zip(a, b))
+
+
+def fetch_selector_tile(selector_name, selector, tile, cache):
+    if cache:
+        cached = cache.get(selector_name, tile)
+        if cached is not None:
+            return cached
+    south, west, north, east = tile
+    query = f"[out:json][timeout:25];({selector}({south:.6f},{west:.6f},{north:.6f},{east:.6f}););out tags geom;"
+    data = post_overpass(query)
+    if cache:
+        cache.set(selector_name, tile, data)
+    return data
+
+
+def tiles_for_bbox(south, west, north, east):
+    if SURFACE_CACHE_TILE_DEGREES <= 0:
+        return [(south, west, north, east)]
+    lat_start = math.floor(south / SURFACE_CACHE_TILE_DEGREES) * SURFACE_CACHE_TILE_DEGREES
+    lon_start = math.floor(west / SURFACE_CACHE_TILE_DEGREES) * SURFACE_CACHE_TILE_DEGREES
+    tiles = []
+    lat = lat_start
+    while lat <= north:
+        lon = lon_start
+        while lon <= east:
+            tiles.append((round(lat, 6), round(lon, 6), round(lat + SURFACE_CACHE_TILE_DEGREES, 6), round(lon + SURFACE_CACHE_TILE_DEGREES, 6)))
+            lon += SURFACE_CACHE_TILE_DEGREES
+        lat += SURFACE_CACHE_TILE_DEGREES
+    return sorted(set(tiles))
+
+
+class SurfaceCache:
+    def __init__(self):
+        self.conn = None
+        try:
+            cache_file = resolve_cache_file()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(cache_file)
+            self.conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS osm_way_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    selector TEXT NOT NULL,
+                    tile_south REAL NOT NULL,
+                    tile_west REAL NOT NULL,
+                    tile_north REAL NOT NULL,
+                    tile_east REAL NOT NULL,
+                    response_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn = None
+
+    def get(self, selector, tile):
+        if not self.conn:
+            return None
+        try:
+            row = self.conn.execute(
+                "SELECT response_json FROM osm_way_cache WHERE cache_key = ?",
+                (self.cache_key(selector, tile),),
+            ).fetchone()
+            return json.loads(row[0]) if row else None
+        except Exception:
+            return None
+
+    def set(self, selector, tile, data):
+        if not self.conn:
+            return
+        try:
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO osm_way_cache (
+                    cache_key, provider, selector, tile_south, tile_west, tile_north, tile_east, response_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (self.cache_key(selector, tile), SURFACE_SOURCE, selector, tile[0], tile[1], tile[2], tile[3], json.dumps(data)),
+            )
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def cache_key(self, selector, tile):
+        bounds = ":".join(f"{value:.6f}" for value in tile)
+        return f"{SURFACE_CACHE_VERSION}:{SURFACE_SOURCE}:{selector}:{bounds}"
 
 
 def post_overpass(query):
@@ -168,12 +309,12 @@ def nearest_way(start, end, ways):
     best_way = None
     best_distance = None
     for way in ways:
-        geometry = way.get("geometry", [])
-        for a, b in zip(geometry, geometry[1:]):
-            distance = point_to_segment_m(mid_lat, mid_lon, a["lat"], a["lon"], b["lat"], b["lon"])
-            if best_distance is None or distance < best_distance:
-                best_way = way
-                best_distance = distance
+        for geometry in way.get("geometry_parts") or [way.get("geometry", [])]:
+            for a, b in zip(geometry, geometry[1:]):
+                distance = point_to_segment_m(mid_lat, mid_lon, a["lat"], a["lon"], b["lat"], b["lon"])
+                if best_distance is None or distance < best_distance:
+                    best_way = way
+                    best_distance = distance
     if best_distance is None or best_distance > SURFACE_MATCH_RADIUS_M:
         return None, best_distance
     return best_way, best_distance
