@@ -10,3 +10,4 @@ tokens/
 cache/
 src/cache/
 *.cache.db
+.vscode/
