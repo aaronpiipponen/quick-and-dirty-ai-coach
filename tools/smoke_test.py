@@ -49,7 +49,7 @@ def main():
         context = run(["tools/coach_context.py", "--db", str(sample_db)])
         if "Anchor date: 2026-06-10" not in context.stdout:
             raise SystemExit("Smoke test failed: sample coach context anchor date was not 2026-06-10")
-        if "calf_load" not in context.stdout:
+        if "2026-06-09 | injury" not in context.stdout or "Keep the next endurance session easy" not in context.stdout:
             raise SystemExit("Smoke test failed: sample coach context did not include calf decision")
 
         run(["src/sync.py", "--help"])
