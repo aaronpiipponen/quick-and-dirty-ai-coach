@@ -1,4 +1,4 @@
-# User Profile
+# Example User Profile
 
 Coach-owned stable user context. Not user-facing. Keep durable context here, not rolling workout analysis.
 

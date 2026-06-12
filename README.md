@@ -28,6 +28,36 @@ The goal is not to replace a professional coach. The goal is to build a small su
 
 Disclaimer: this is a personal decision-support experiment, not medical advice, professional coaching, or a general-purpose fitness product. The sample data in this public repo is fabricated.
 
+## If You Want to Adapt It
+
+This is published as a portfolio/reference project, not as a ready-to-run product. If you want to use it for yourself, the important parts to change are:
+
+- create a private `.env` from `.env.example` with your own source credentials and database path
+- run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
+- run `python tools/smoke_test.py` if you want to check that the demo database and core CLI paths still work
+- adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
+- during your first session, the coach fills `user/user_profile.md`, `user/training_plan.md`, `coach/coach_notes.md`, and `coach/coach_instructions` based on your own profile through a series questions
+
+The coach handles syncing data, reading context files, querying the database, checking prior decisions, and updating notes and the plan as needed. You just ask questions and follow the training plan.
+
+If you need other source adapters, the AI agent can implement a new source relatively easily based on the already existing ones and their documentation.
+
+Example prompt and answer using the fabricated sample database:
+
+![Example opencode prompt](docs/screenshots/example_prompt.png)
+
+![Example opencode answer](docs/screenshots/example_answer.png)
+
+Example user prompts:
+
+```text
+My calf felt weird this morning. Should I still do today's run?
+```
+
+```text
+Did yesterday's high heart rate look like fatigue, heat, or pacing drift?
+```
+
 ## Architecture
 
 The repo is split into:
@@ -87,39 +117,6 @@ Current source adapters:
 - `sqlite_import`: imports compatible or mapped tables from another SQLite database, with planning, dry-run, auto-map, strict mapping, date filters, and per-table imports.
 
 Use `python src/sync.py --help` to list sources and `python src/sync.py <source> --help` for source-specific options. For SQLite imports with renamed source tables or columns, see `src/sources/sqlite_import_mapping.example.md`.
-
-## If You Want to Adapt It
-
-This is published as a portfolio/reference project, not as a ready-to-run product. If you want to use it for yourself, the important parts to change are:
-
-- create a private `.env` from `.env.example` with your own source credentials and database path
-- replace the sample coach/user Markdown files with your own profile, current status, and plan
-- run `python src/sync.py --help` and `python src/sync.py <source> --help` before syncing data
-- run `python src/db/init.py --sample` if you want a tiny fabricated database before connecting real data
-- run `python tools/smoke_test.py` if you want to check that the demo database and core CLI paths still work
-- adapt `AGENTS.md` for your agent CLI; it is written for opencode, and tools such as Claude CLI will not automatically follow it without equivalent instructions in their own format
-
-The intended loop is simple: sync or import data, ask a training question through the agent CLI, and let the coach read the Markdown context plus SQLite summaries before answering.
-
-Example prompt and answer using the fabricated sample database:
-
-![Example opencode prompt](docs/screenshots/example_prompt.png)
-
-![Example opencode answer](docs/screenshots/example_answer.png)
-
-Example user prompts:
-
-```text
-My calf felt weird this morning. Should I still do today's run?
-```
-
-```text
-Review my last week and tell me if the weekend long session should change.
-```
-
-```text
-Did yesterday's high heart rate look like fatigue, heat, or pacing drift?
-```
 
 ## Design Choices
 

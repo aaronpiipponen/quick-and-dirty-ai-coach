@@ -1,4 +1,4 @@
-# Training Plan
+# Example Training Plan
 
 User-facing plan. Keep this focused on instructions, targets, and upcoming schedule adjustments. Do not store private coach reasoning or retrospective analysis here.
 
