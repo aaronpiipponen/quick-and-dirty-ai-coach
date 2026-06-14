@@ -12,9 +12,9 @@ DEFAULT_DB_FILE = PROJECT_ROOT / "src" / "db" / "user_data.db"
 
 PROFILE_SECTIONS = {
     "overview": ["recent_health", "weekly_volume", "recent_workouts", "active_decisions", "due_reviews", "weighins", "derived_flags"],
-    "injury": ["injury_decisions", "symptom_notes", "surface_exposure", "workouts_next_day", "long_walks", "derived_flags"],
+    "injury": ["injury_decisions", "symptom_notes", "surface_exposure", "latest_route", "workouts_next_day", "long_walks", "derived_flags"],
     "load": ["load_summary", "weekly_volume", "recovery_trend", "recent_workouts", "derived_flags"],
-    "event": ["event_decisions", "long_walks", "surface_specificity", "pack_fuel_notes", "recovery_trend", "derived_flags"],
+    "event": ["event_decisions", "long_walks", "surface_specificity", "latest_route", "pack_fuel_notes", "recovery_trend", "derived_flags"],
     "nutrition": ["weight_trend", "daily_calories", "long_session_fueling", "nutrition_notes", "derived_flags"],
     "strength": ["strength_sessions", "strength_progression", "strength_gap", "strength_decisions", "derived_flags"],
     "workout": ["workout_detail", "workout_weather", "workout_surfaces", "workout_stream_summary"],
@@ -26,6 +26,16 @@ SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3}
 SYMPTOM_RE = re.compile(r"pain|sensation|gait|knee|hip|heel|foot|feet|blister|ache|sore", re.I)
 PACK_FUEL_RE = re.compile(r"pack|load|fuel|food|water|drink|gel|carb|thirst|snack", re.I)
 NUTRITION_RE = re.compile(r"fuel|food|bonk|hunger|hungry|thirst|stomach|cramp|energy|drink|carb", re.I)
+
+SPORT_ALIASES = {
+    "run": ["running", "trail_running", "treadmill_running"],
+    "walk": ["walking"],
+    "bike": ["cycling", "road_biking"],
+    "strength": ["strength_training", "fitness_equipment"],
+    "cardio": ["running", "trail_running", "treadmill_running", "walking", "cycling", "road_biking"],
+}
+
+DECISION_TOPICS = {"load", "injury", "event", "nutrition", "gear", "strength"}
 
 
 def resolve_db_file():
@@ -50,22 +60,94 @@ def parse_args():
     parser.add_argument("--workouts", type=int, default=10, help="Maximum recent workouts to print.")
     parser.add_argument("--flags", default=None, help="Comma-separated flag groups or 'all'.")
     parser.add_argument("--severity", choices=sorted(SEVERITY_ORDER), default="low", help="Minimum flag severity to print.")
-    parser.add_argument("--brief", action="store_true", help="Print fewer rows while preserving high-severity flags and active decisions.")
+    parser.add_argument("--brief", action="store_true", help="Equivalent to --detail summary with high-severity preservation.")
+    parser.add_argument("--detail", choices=["summary", "standard", "full"], default=None, help="Output depth: summary, standard (default), full.")
+    parser.add_argument("--sport", default=None, help="Comma-separated sport names or aliases (run,walk,bike,strength,cardio).")
+    parser.add_argument("--topic", default=None, help="Comma-separated decision topics (load,injury,event,nutrition,gear,strength).")
+    parser.add_argument("--exercise", default=None, help="Exercise name for targeted strength views.")
+    parser.add_argument("--raw", choices=["none", "streams", "segments", "all"], default=None, help="Raw output mode: none (default), streams, segments, all.")
     parser.add_argument("--format", choices=["table", "markdown"], default="table", help="Output format.")
-    parser.add_argument("--raw-streams", action="store_true", help="Print raw workout stream JSON in workout profile.")
+    parser.add_argument("--raw-streams", action="store_true", help="Backwards-compatible alias for --raw streams.")
     return parser.parse_args()
 
 
 def section_names():
     return {
         "active_decisions", "daily_calories", "day_decisions", "day_health", "day_recovery_context",
-        "day_workouts", "derived_flags", "due_reviews", "event_decisions", "injury_decisions", "load_summary",
-        "long_session_fueling", "long_walks", "nutrition_notes", "pack_fuel_notes", "recent_health",
-        "recent_workouts", "recovery_trend", "strength_decisions", "strength_gap", "strength_progression",
-        "strength_sessions", "surface_exposure", "surface_specificity", "symptom_notes", "weekly_volume",
-        "weighins", "weight_trend", "workout_detail", "workout_stream_summary", "workout_surfaces",
-        "workout_weather", "workouts_next_day",
+        "day_workouts", "decision_context", "derived_flags", "due_reviews", "event_decisions",
+        "injury_decisions", "latest_route", "load_summary", "long_session_fueling", "long_walks",
+        "nutrition_notes", "pack_fuel_notes", "recent_decisions", "recent_health", "recent_workouts",
+        "recovery_trend", "strength_decisions", "strength_gap", "strength_progression",
+        "strength_sessions", "strength_sets", "surface_exposure", "surface_specificity",
+        "symptom_notes", "weekly_volume", "weighins", "weight_trend", "workout_detail",
+        "workout_stream_summary", "workout_surfaces", "workout_weather", "workouts_next_day",
     }
+
+
+def detail_level(args):
+    if args.detail:
+        return args.detail
+    if args.brief:
+        return "summary"
+    return "standard"
+
+
+def row_limit(args, standard, summary=None, full=None):
+    d = detail_level(args)
+    if d == "summary":
+        s = summary if summary is not None else max(3, standard // 2)
+        if args.brief:
+            return s
+        return s
+    if d == "full":
+        return full if full is not None else max(standard, min(standard * 2, 30))
+    return standard
+
+
+def selected_sports(args):
+    if not args.sport:
+        return None
+    result = []
+    for token in args.sport.split(","):
+        token = token.strip().lower()
+        if token in SPORT_ALIASES:
+            result.extend(SPORT_ALIASES[token])
+        else:
+            result.append(token)
+    return list(dict.fromkeys(result))
+
+
+def sport_where(sports, prefix="w"):
+    if not sports:
+        return "", []
+    placeholders = ", ".join("?" for _ in sports)
+    col = f"{prefix}.sport" if prefix else "sport"
+    return f"AND {col} IN ({placeholders})", list(sports)
+
+
+def selected_topics(args):
+    if not args.topic:
+        return None
+    result = []
+    for token in args.topic.split(","):
+        token = token.strip().lower()
+        if token not in DECISION_TOPICS:
+            raise SystemExit(f"Unknown decision topic: {token}. Valid: {', '.join(sorted(DECISION_TOPICS))}")
+        result.append(token)
+    return result
+
+
+def raw_enabled(args, kind):
+    raw_val = args.raw
+    if raw_val is None and args.raw_streams:
+        raw_val = "streams"
+    if raw_val is None:
+        raw_val = "none"
+    if kind == "streams" and raw_val in ("streams", "all"):
+        return True
+    if kind == "segments" and raw_val in ("segments", "all"):
+        return True
+    return False
 
 
 def validate_args(args):
@@ -79,6 +161,28 @@ def validate_args(args):
         raise SystemExit("--profile workout requires --workout ACTIVITY_ID")
     if args.profile == "day" and not args.date:
         raise SystemExit("--profile day requires --date YYYY-MM-DD")
+    sections = selected_sections(args)
+    has_sport_sections = bool(set(sections) & {
+        "recent_workouts", "weekly_volume", "load_summary", "long_walks",
+        "surface_exposure", "surface_specificity", "workouts_next_day", "latest_route",
+    })
+    if args.sport and not has_sport_sections:
+        raise SystemExit("--sport is only valid with workout-derived sections: recent_workouts, weekly_volume, load_summary, long_walks, surface_exposure, surface_specificity, workouts_next_day")
+    has_decision_sections = bool(set(sections) & {
+        "active_decisions", "recent_decisions", "decision_context",
+        "injury_decisions", "event_decisions", "strength_decisions",
+    })
+    if args.topic and not has_decision_sections:
+        raise SystemExit("--topic is only valid with decision sections: active_decisions, recent_decisions, decision_context, injury_decisions, event_decisions, strength_decisions")
+    has_strength_sections = bool(set(sections) & {"strength_progression", "strength_sets"})
+    if args.exercise and not has_strength_sections:
+        raise SystemExit("--exercise is only valid with strength sections: strength_progression, strength_sets")
+    has_segment_sections = bool(set(sections) & {"workout_surfaces"})
+    if raw_enabled(args, "segments") and not has_segment_sections and args.profile != "workout":
+        raise SystemExit("--raw segments requires a workout context (workout profile with --workout, or --section workout_surfaces)")
+    has_stream_sections = bool(set(sections) & {"workout_stream_summary", "day_health"})
+    if raw_enabled(args, "streams") and not has_stream_sections and args.profile not in ("workout", "day"):
+        raise SystemExit("--raw streams requires a workout or day context with stream-producing sections")
 
 
 def scalar(conn, sql, params=()):
@@ -162,35 +266,71 @@ def print_lines(title, lines):
         print(line)
 
 
-def limit_for(args, default, brief=None):
-    if not args.brief:
-        return default
-    return brief if brief is not None else max(3, default // 2)
-
-
 def section_recent_health(conn, args, anchor):
-    data = rows(
-        conn,
-        """
-        SELECT date, weight_kg, resting_hr,
-               ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
-               sleep_score, hrv_last_night_avg AS hrv, hrv_status,
-               training_readiness AS readiness, training_load AS load
-        FROM daily_summary
-        WHERE date BETWEEN ? AND ?
-        ORDER BY date DESC
-        LIMIT ?
-        """,
-        (window_start(anchor, args), anchor, limit_for(args, 7, 5)),
-    )
-    print_rows("Recent Health", data, [("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("sleep_hrs", 9), ("sleep_score", 11), ("hrv", 6), ("hrv_status", 12), ("readiness", 9), ("load", 6)])
+    d = detail_level(args)
+    if d == "summary":
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, sleep_score, hrv_last_night_avg AS hrv, training_readiness AS readiness
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 7, 5)),
+        )
+        print_rows("Recent Health", data, [("date", 10), ("resting_hr", 10), ("sleep_score", 11), ("hrv", 6), ("readiness", 9)])
+    elif d == "full":
+        data = rows(
+            conn,
+            """
+            SELECT date, weight_kg, resting_hr, max_hr, total_steps,
+                   calories_active, intensity_minutes,
+                   ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_score, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   hrv_status, training_readiness AS readiness, training_load AS load,
+                   training_status_feedback, training_load_balance_feedback
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 7, 5, 14)),
+        )
+        print_rows("Recent Health", data, [
+            ("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("max_hr", 7),
+            ("total_steps", 11), ("calories_active", 15), ("intensity_minutes", 17),
+            ("sleep_hrs", 9), ("sleep_score", 11), ("hrv", 6), ("hrv_7d", 7),
+            ("hrv_status", 12), ("readiness", 9), ("load", 6),
+            ("training_status_feedback", 26), ("training_load_balance_feedback", 30),
+        ])
+    else:
+        data = rows(
+            conn,
+            """
+            SELECT date, weight_kg, resting_hr,
+                   ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_score, hrv_last_night_avg AS hrv, hrv_status,
+                   training_readiness AS readiness, training_load AS load,
+                   calories_active, intensity_minutes
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 7, 5)),
+        )
+        print_rows("Recent Health", data, [("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("sleep_hrs", 9), ("sleep_score", 11), ("hrv", 6), ("hrv_status", 12), ("readiness", 9), ("load", 6), ("calories_active", 15), ("intensity_minutes", 17)])
 
 
 def section_weekly_volume(conn, args, anchor):
-    weeks = 4 if args.brief else 6
+    d = detail_level(args)
+    weeks = 4 if d == "summary" else (8 if d == "full" else 6)
+    sport_clause, sport_params = sport_where(selected_sports(args), prefix="")
     data = rows(
         conn,
-        """
+        f"""
         SELECT strftime('%Y-W%W', date) AS week,
                COUNT(*) AS sessions,
                ROUND(SUM(distance_km), 1) AS km,
@@ -198,26 +338,82 @@ def section_weekly_volume(conn, args, anchor):
                SUM(zone1_mins) AS z1,
                SUM(zone2_mins) AS z2,
                SUM(zone3_mins + zone4_mins + zone5_mins) AS z3plus
+               {" , SUM(zone3_mins) AS z3, SUM(zone4_mins) AS z4, SUM(zone5_mins) AS z5, SUM(zone4_mins + zone5_mins) AS high_int, ROUND(AVG(avg_hr)) AS avg_hr" if d == "full" else ""}
         FROM workouts
-        WHERE date >= date(?, ?)
+        WHERE date >= date(?, ?) {sport_clause}
         GROUP BY week
         ORDER BY week DESC
         LIMIT ?
         """,
-        (anchor, f"-{weeks * 7 - 1} days", weeks),
+        (anchor, f"-{weeks * 7 - 1} days", *sport_params, weeks),
     )
-    print_rows("Workout Weeks", data, [("week", 9), ("sessions", 8), ("km", 7), ("moving_hrs", 10), ("z1", 6), ("z2", 6), ("z3plus", 7)])
+    if d == "full":
+        print_rows("Workout Weeks", data, [("week", 9), ("sessions", 8), ("km", 7), ("moving_hrs", 10), ("z1", 6), ("z2", 6), ("z3plus", 7), ("z3", 6), ("z4", 6), ("z5", 6), ("high_int", 8), ("avg_hr", 6)])
+    else:
+        print_rows("Workout Weeks", data, [("week", 9), ("sessions", 8), ("km", 7), ("moving_hrs", 10), ("z1", 6), ("z2", 6), ("z3plus", 7)])
 
 
 def section_recent_workouts(conn, args, anchor):
-    data = recent_workout_rows(conn, args, anchor, limit_for(args, args.workouts, 5))
-    print_rows("Recent Workouts", data, workout_columns())
+    d = detail_level(args)
+    limit = row_limit(args, args.workouts, 5, 20)
+    sport_clause, sport_params = sport_where(selected_sports(args))
+    if d == "full":
+        data = rows(
+            conn,
+            f"""
+            SELECT w.activity_id AS id, w.date, w.sport, w.name,
+                   w.distance_km AS km, moving_duration_mins AS moving_min,
+                   w.total_duration_mins, w.elapsed_duration_mins,
+                   w.avg_pace, w.avg_moving_pace AS pace, w.avg_hr,
+                   w.calories,
+                   w.zone2_mins AS z2, w.zone3_mins + w.zone4_mins + w.zone5_mins AS z3plus,
+                   w.zone4_mins + w.zone5_mins AS high_intensity,
+                   r.hard_surface_km AS hard_km, r.soft_surface_km AS soft_km,
+                   r.distance_unknown_km AS unknown_km,
+                   ROUND(ww.avg_temp_c, 1) AS temp_c, ROUND(ww.avg_humidity_pct, 0) AS humidity,
+                   ROUND(ww.precipitation_mm, 1) AS precip_mm, ROUND(ww.max_wind_gust_kmh, 0) AS wind_gust,
+                   w.notes
+            FROM workouts w
+            LEFT JOIN workout_routes r ON r.activity_id = w.activity_id
+            LEFT JOIN workout_weather ww ON ww.activity_id = w.activity_id
+            WHERE w.date BETWEEN ? AND ? {sport_clause}
+            ORDER BY w.date DESC, w.activity_id DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, *sport_params, limit),
+        )
+        print_rows("Recent Workouts", data, [
+            ("id", 11), ("date", 10), ("sport", 12), ("name", 20),
+            ("km", 6), ("moving_min", 10), ("total_duration_mins", 19), ("elapsed_duration_mins", 21),
+            ("avg_pace", 9), ("pace", 7), ("avg_hr", 6), ("calories", 8),
+            ("z2", 5), ("z3plus", 7), ("high_intensity", 14), ("hard_km", 7), ("soft_km", 7), ("unknown_km", 10),
+            ("temp_c", 7), ("humidity", 8), ("precip_mm", 9), ("wind_gust", 9),
+            ("notes", 72),
+        ])
+    elif d == "summary":
+        data = rows(
+            conn,
+            f"""
+            SELECT w.activity_id AS id, w.date, w.sport, w.distance_km AS km,
+                   moving_duration_mins AS moving_min, w.avg_moving_pace AS pace, w.avg_hr, w.notes
+            FROM workouts w
+            WHERE w.date BETWEEN ? AND ? {sport_clause}
+            ORDER BY w.date DESC, w.activity_id DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, *sport_params, limit),
+        )
+        print_rows("Recent Workouts", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("moving_min", 10), ("pace", 7), ("avg_hr", 6), ("notes", 50)])
+    else:
+        data = recent_workout_rows(conn, args, anchor, limit)
+        print_rows("Recent Workouts", data, workout_columns())
 
 
 def recent_workout_rows(conn, args, anchor, limit):
+    sport_clause, sport_params = sport_where(selected_sports(args))
     return rows(
         conn,
-        """
+        f"""
         SELECT w.activity_id AS id, w.date, w.sport, w.distance_km AS km,
                moving_duration_mins AS moving_min, w.avg_moving_pace AS pace, w.avg_hr,
                w.zone2_mins AS z2, w.zone3_mins + w.zone4_mins + w.zone5_mins AS z3plus,
@@ -225,11 +421,11 @@ def recent_workout_rows(conn, args, anchor, limit):
                r.distance_unknown_km AS unknown_km, w.notes
         FROM workouts w
         LEFT JOIN workout_routes r ON r.activity_id = w.activity_id
-        WHERE w.date BETWEEN ? AND ?
+        WHERE w.date BETWEEN ? AND ? {sport_clause}
         ORDER BY w.date DESC, w.activity_id DESC
         LIMIT ?
         """,
-        (window_start(anchor, args), anchor, limit),
+        (window_start(anchor, args), anchor, *sport_params, limit),
     )
 
 
@@ -237,24 +433,108 @@ def workout_columns():
     return [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("moving_min", 10), ("pace", 7), ("avg_hr", 6), ("z2", 5), ("z3plus", 7), ("hard_km", 7), ("soft_km", 7), ("unknown_km", 10), ("notes", 72)]
 
 
-def section_active_decisions(conn, args, anchor, topics=None, title="Active Coach Decisions"):
+def section_active_decisions(conn, args, anchor, topics=None, title=None):
+    d = detail_level(args)
+    topics = topics or selected_topics(args)
     params = []
     where = ["status = 'active'"]
     if topics:
         where.append(f"topic IN ({', '.join('?' for _ in topics)})")
         params.extend(topics)
+    display_title = title or "Active Coach Decisions"
+    if d == "full":
+        data = rows(
+            conn,
+            f"""
+            SELECT decision_id AS id, date, topic, decision, reason,
+                   linked_activity_id, linked_date, next_review_date AS review
+            FROM coach_decisions
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(next_review_date, date), decision_id
+            LIMIT ?
+            """,
+            (*params, row_limit(args, 8, 5, 16)),
+        )
+        print_rows(display_title, data, [("id", 4), ("date", 10), ("topic", 10), ("decision", 46), ("reason", 36), ("linked_activity_id", 18), ("linked_date", 12), ("review", 10)])
+    else:
+        data = rows(
+            conn,
+            f"""
+            SELECT decision_id AS id, date, topic, next_review_date AS review, decision
+            FROM coach_decisions
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(next_review_date, date), decision_id
+            LIMIT ?
+            """,
+            (*params, row_limit(args, 8, 5)),
+        )
+        print_rows(display_title, data, [("id", 4), ("date", 10), ("topic", 10), ("review", 10), ("decision", 86)])
+
+
+def section_recent_decisions(conn, args, anchor):
+    d = detail_level(args)
+    topics = selected_topics(args)
+    params = []
+    where_parts = []
+    if topics:
+        where_parts.append(f"topic IN ({', '.join('?' for _ in topics)})")
+        params.extend(topics)
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+    if d == "full":
+        data = rows(
+            conn,
+            f"""
+            SELECT decision_id AS id, date, topic, status, decision, reason,
+                   linked_activity_id, linked_date, next_review_date AS review
+            FROM coach_decisions
+            {where_sql}
+            {"AND" if where_sql else "WHERE"} date BETWEEN ? AND ?
+            ORDER BY date DESC, decision_id DESC
+            LIMIT ?
+            """,
+            (*params, window_start(anchor, args), anchor, row_limit(args, 15, 5, 30)),
+        )
+        print_rows("Recent Decisions", data, [("id", 4), ("date", 10), ("topic", 10), ("status", 10), ("decision", 40), ("reason", 30), ("linked_activity_id", 18), ("linked_date", 12), ("review", 10)])
+    else:
+        data = rows(
+            conn,
+            f"""
+            SELECT decision_id AS id, date, topic, status, next_review_date AS review, decision
+            FROM coach_decisions
+            {where_sql}
+            {"AND" if where_sql else "WHERE"} date BETWEEN ? AND ?
+            ORDER BY date DESC, decision_id DESC
+            LIMIT ?
+            """,
+            (*params, window_start(anchor, args), anchor, row_limit(args, 15, 5, 25)),
+        )
+        print_rows("Recent Decisions", data, [("id", 4), ("date", 10), ("topic", 10), ("status", 10), ("review", 10), ("decision", 70)])
+
+
+def section_decision_context(conn, args, anchor):
+    d = detail_level(args)
+    topics = selected_topics(args)
+    params = []
+    where_parts = []
+    if topics:
+        where_parts.append(f"d.topic IN ({', '.join('?' for _ in topics)})")
+        params.extend(topics)
+    where_sql = f"{' AND '.join(where_parts)} AND" if where_parts else ""
     data = rows(
         conn,
         f"""
-        SELECT decision_id AS id, date, topic, next_review_date AS review, decision
-        FROM coach_decisions
-        WHERE {' AND '.join(where)}
-        ORDER BY COALESCE(next_review_date, date), decision_id
+        SELECT d.decision_id AS id, d.date, d.topic, d.status, d.decision,
+               d.reason, d.linked_activity_id, d.linked_date,
+               w.date AS workout_date, w.sport, w.name, w.distance_km AS km, w.avg_hr
+        FROM coach_decisions d
+        LEFT JOIN workouts w ON w.activity_id = d.linked_activity_id
+        WHERE {where_sql} d.date BETWEEN ? AND ?
+        ORDER BY d.date DESC, d.decision_id DESC
         LIMIT ?
         """,
-        (*params, limit_for(args, 8, 5)),
+        (*params, window_start(anchor, args), anchor, row_limit(args, 15, 5, 25)),
     )
-    print_rows(title, data, [("id", 4), ("date", 10), ("topic", 10), ("review", 10), ("decision", 86)])
+    print_rows("Decision Context", data, [("id", 4), ("date", 10), ("topic", 10), ("status", 10), ("decision", 34), ("reason", 24), ("linked_activity_id", 18), ("workout_date", 12), ("sport", 12), ("name", 18), ("km", 6), ("avg_hr", 6)])
 
 
 def due_review_rows(conn, anchor):
@@ -279,13 +559,13 @@ def section_due_reviews(conn, args, anchor):
         return
     ids = ", ".join(str(row["id"]) for row in data)
     lines = [f"{len(data)} due review(s): ids {ids}"]
-    for row in data[:limit_for(args, 5, 3)]:
+    for row in data[:row_limit(args, 5, 3)]:
         lines.append(f"id {row['id']} | review {row['review']} | topic {row['topic']} | {clip(row['decision'], 72)}")
     print_lines("Due Decision Reviews", lines)
 
 
 def section_weighins(conn, args, anchor):
-    data = rows(conn, "SELECT date, weight_kg FROM daily_summary WHERE weight_kg IS NOT NULL ORDER BY date DESC LIMIT ?", (limit_for(args, 5, 3),))
+    data = rows(conn, "SELECT date, weight_kg FROM daily_summary WHERE weight_kg IS NOT NULL ORDER BY date DESC LIMIT ?", (row_limit(args, 5, 3),))
     print_rows("Latest Weigh-Ins", data, [("date", 10), ("weight_kg", 9)])
 
 
@@ -300,71 +580,115 @@ def section_weight_trend(conn, args, anchor):
         ORDER BY date DESC
         LIMIT ?
         """,
-        (limit_for(args, 8, 5),),
+        (row_limit(args, 8, 5, args.days),),
     )
     print_rows("Weight Trend", data, [("date", 10), ("weight_kg", 9), ("change_kg", 9)])
 
 
 def section_load_summary(conn, args, anchor):
+    d = detail_level(args)
+    sport_clause, sport_params = sport_where(selected_sports(args), prefix="")
     data = []
     for days in (7, 14, 28):
         row = rows(
             conn,
-            """
+            f"""
             SELECT ? AS window_days, COUNT(*) AS sessions, ROUND(SUM(distance_km), 1) AS km,
                    ROUND(SUM(moving_duration_mins) / 60.0, 1) AS moving_hrs,
                    SUM(zone1_mins) AS z1, SUM(zone2_mins) AS z2,
                    SUM(zone3_mins + zone4_mins + zone5_mins) AS z3plus
             FROM workouts
-            WHERE date BETWEEN date(?, ?) AND ?
+            WHERE date BETWEEN date(?, ?) AND ? {sport_clause}
             """,
-            (days, anchor, f"-{days - 1} days", anchor),
+            (days, anchor, f"-{days - 1} days", anchor, *sport_params),
         )[0]
         data.append(row)
     print_rows("Rolling Load Summary", data, [("window_days", 11), ("sessions", 8), ("km", 7), ("moving_hrs", 10), ("z1", 6), ("z2", 6), ("z3plus", 7)])
 
 
 def section_recovery_trend(conn, args, anchor):
-    data = rows(
-        conn,
-        """
-        SELECT date, resting_hr, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
-               training_readiness AS readiness, sleep_score,
-               ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs, training_load AS load
-        FROM daily_summary
-        WHERE date BETWEEN ? AND ?
-        ORDER BY date DESC
-        LIMIT ?
-        """,
-        (window_start(anchor, args), anchor, limit_for(args, 14, 7)),
-    )
-    print_rows("Recovery Trend", data, [("date", 10), ("resting_hr", 10), ("hrv", 6), ("hrv_7d", 7), ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9), ("load", 6)])
+    d = detail_level(args)
+    if d == "full":
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   hrv_status, training_readiness AS readiness,
+                   sleep_score, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_deep_mins, sleep_light_mins, sleep_rem_mins,
+                   training_load AS load, training_status_feedback, training_load_balance_feedback,
+                   stress_stream, body_battery_stream, respiration_stream
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 14, 7, 28)),
+        )
+        print_rows("Recovery And Sleep Trend", data, [
+            ("date", 10), ("resting_hr", 10), ("hrv", 6), ("hrv_7d", 7),
+            ("hrv_status", 12), ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9),
+            ("sleep_deep_mins", 14), ("sleep_light_mins", 15), ("sleep_rem_mins", 14),
+            ("load", 6), ("training_status_feedback", 26), ("training_load_balance_feedback", 30),
+            ("stress_stream", 14), ("body_battery_stream", 18), ("respiration_stream", 16),
+        ])
+    elif d == "summary":
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, hrv_last_night_avg AS hrv, training_readiness AS readiness
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 14, 7)),
+        )
+        print_rows("Recovery Trend", data, [("date", 10), ("resting_hr", 10), ("hrv", 6), ("readiness", 9)])
+    else:
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   training_readiness AS readiness, sleep_score,
+                   ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs, training_load AS load,
+                   stress_stream, body_battery_stream, respiration_stream
+            FROM daily_summary
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (window_start(anchor, args), anchor, row_limit(args, 14, 7)),
+        )
+        print_rows("Recovery Trend", data, [("date", 10), ("resting_hr", 10), ("hrv", 6), ("hrv_7d", 7), ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9), ("load", 6), ("stress_stream", 14), ("body_battery_stream", 18), ("respiration_stream", 16)])
 
 
 def section_surface_exposure(conn, args, anchor):
+    sport_clause, sport_params = sport_where(selected_sports(args))
     data = rows(
         conn,
-        """
+        f"""
         SELECT w.date, ROUND(SUM(r.hard_surface_km), 1) AS hard_km,
                ROUND(SUM(r.soft_surface_km), 1) AS soft_km,
                ROUND(SUM(r.distance_unknown_km), 1) AS unknown_km,
                ROUND(SUM(w.distance_km), 1) AS total_km
         FROM workouts w
         JOIN workout_routes r ON r.activity_id = w.activity_id
-        WHERE w.date BETWEEN ? AND ?
+        WHERE w.date BETWEEN ? AND ? {sport_clause}
         GROUP BY w.date
         ORDER BY w.date DESC
         LIMIT ?
         """,
-        (window_start(anchor, args), anchor, limit_for(args, 12, 7)),
+        (window_start(anchor, args), anchor, *sport_params, row_limit(args, 12, 7, 20)),
     )
     print_rows("Surface Exposure By Day", data, [("date", 10), ("hard_km", 8), ("soft_km", 8), ("unknown_km", 10), ("total_km", 8)])
 
 
 def section_surface_specificity(conn, args, anchor):
+    sport_clause, sport_params = sport_where(selected_sports(args))
     data = rows(
         conn,
-        """
+        f"""
         SELECT ? AS since, ? AS until,
                ROUND(SUM(r.hard_surface_km), 1) AS hard_km,
                ROUND(SUM(r.soft_surface_km), 1) AS soft_km,
@@ -374,15 +698,15 @@ def section_surface_specificity(conn, args, anchor):
                ROUND(100.0 * SUM(r.soft_surface_km) / NULLIF(SUM(r.surface_total_km), 0), 1) AS soft_pct
         FROM workouts w
         JOIN workout_routes r ON r.activity_id = w.activity_id
-        WHERE w.date BETWEEN ? AND ?
+        WHERE w.date BETWEEN ? AND ? {sport_clause}
         """,
-        (window_start(anchor, args), anchor, window_start(anchor, args), anchor),
+        (window_start(anchor, args), anchor, window_start(anchor, args), anchor, *sport_params),
     )
     print_rows("Surface Specificity", data, [("since", 10), ("until", 10), ("hard_km", 8), ("soft_km", 8), ("unknown_km", 10), ("surface_total_km", 16), ("hard_pct", 8), ("soft_pct", 8)])
 
 
 def section_symptom_notes(conn, args, anchor):
-    data = note_rows(conn, args, anchor, SYMPTOM_RE, limit_for(args, 10, 5))
+    data = note_rows(conn, args, anchor, SYMPTOM_RE, row_limit(args, 10, 5))
     print_rows("Symptom Notes", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("notes", 100)])
 
 
@@ -402,19 +726,20 @@ def note_rows(conn, args, anchor, pattern, limit):
 
 
 def section_pack_fuel_notes(conn, args, anchor):
-    data = note_rows(conn, args, anchor, PACK_FUEL_RE, limit_for(args, 10, 5))
+    data = note_rows(conn, args, anchor, PACK_FUEL_RE, row_limit(args, 10, 5))
     print_rows("Pack/Fuel Notes", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("notes", 100)])
 
 
 def section_nutrition_notes(conn, args, anchor):
-    data = note_rows(conn, args, anchor, NUTRITION_RE, limit_for(args, 10, 5))
+    data = note_rows(conn, args, anchor, NUTRITION_RE, row_limit(args, 10, 5))
     print_rows("Nutrition Notes", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("notes", 100)])
 
 
 def section_workouts_next_day(conn, args, anchor):
+    sport_clause, sport_params = sport_where(selected_sports(args))
     data = rows(
         conn,
-        """
+        f"""
         SELECT w.activity_id AS id, w.date, w.sport, w.distance_km AS km,
                r.hard_surface_km AS hard_km, r.soft_surface_km AS soft_km,
                w.notes, d.resting_hr AS next_rhr, d.hrv_last_night_avg AS next_hrv,
@@ -422,28 +747,29 @@ def section_workouts_next_day(conn, args, anchor):
         FROM workouts w
         LEFT JOIN workout_routes r ON r.activity_id = w.activity_id
         LEFT JOIN daily_summary d ON d.date = date(w.date, '+1 day')
-        WHERE w.date BETWEEN ? AND ?
+        WHERE w.date BETWEEN ? AND ? {sport_clause}
         ORDER BY w.date DESC, w.activity_id DESC
         LIMIT ?
         """,
-        (window_start(anchor, args), anchor, limit_for(args, args.workouts, 6)),
+        (window_start(anchor, args), anchor, *sport_params, row_limit(args, args.workouts, 6)),
     )
     print_rows("Workouts With Next-Day Health", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("hard_km", 8), ("soft_km", 8), ("next_rhr", 8), ("next_hrv", 8), ("next_readiness", 14), ("next_sleep", 10), ("notes", 72)])
 
 
 def section_long_walks(conn, args, anchor):
+    sport_clause, sport_params = sport_where(selected_sports(args), prefix="")
     data = rows(
         conn,
-        """
+        f"""
         SELECT activity_id AS id, date, sport, distance_km AS km, moving_duration_mins AS moving_min,
                avg_moving_pace AS pace, avg_hr, notes
         FROM workouts
         WHERE date BETWEEN date(?, '-89 days') AND ?
-          AND (distance_km >= 10 OR moving_duration_mins >= 120)
+          AND (distance_km >= 10 OR moving_duration_mins >= 120) {sport_clause}
         ORDER BY distance_km DESC, moving_duration_mins DESC
         LIMIT ?
         """,
-        (anchor, anchor, limit_for(args, 10, 5)),
+        (anchor, anchor, *sport_params, row_limit(args, 10, 5, 20)),
     )
     print_rows("Long Sessions", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("moving_min", 10), ("pace", 7), ("avg_hr", 6), ("notes", 72)])
 
@@ -458,7 +784,7 @@ def section_daily_calories(conn, args, anchor):
         ORDER BY date DESC
         LIMIT ?
         """,
-        (window_start(anchor, args), anchor, limit_for(args, 14, 7)),
+        (window_start(anchor, args), anchor, row_limit(args, 14, 7)),
     )
     print_rows("Daily Calories And Activity", data, [("date", 10), ("weight_kg", 9), ("calories_active", 15), ("total_steps", 11), ("intensity_minutes", 17)])
 
@@ -474,7 +800,7 @@ def section_long_session_fueling(conn, args, anchor):
         ORDER BY date DESC, activity_id DESC
         LIMIT ?
         """,
-        (window_start(anchor, args), anchor, limit_for(args, 8, 5)),
+        (window_start(anchor, args), anchor, row_limit(args, 8, 5)),
     )
     print_rows("Long-Session Fueling Context", data, [("id", 11), ("date", 10), ("sport", 12), ("km", 6), ("moving_min", 10), ("calories", 8), ("avg_hr", 6), ("notes", 72)])
 
@@ -492,31 +818,101 @@ def section_strength_sessions(conn, args, anchor):
         ORDER BY w.date DESC, w.activity_id DESC
         LIMIT ?
         """,
-        (limit_for(args, 8, 4),),
+        (row_limit(args, 8, 4, 15),),
     )
     print_rows("Strength Sessions", data, [("id", 11), ("date", 10), ("name", 28), ("sets", 5), ("set_mins", 8)])
 
 
 def section_strength_progression(conn, args, anchor):
-    data = rows(
-        conn,
-        """
-        WITH ranked AS (
-            SELECT w.date, s.exercise_name, s.reps, s.weight_kg, s.duration_secs,
-                   ROW_NUMBER() OVER (PARTITION BY s.exercise_name ORDER BY w.date DESC, w.activity_id DESC, s.set_order DESC) AS rn
+    d = detail_level(args)
+    exercise = args.exercise
+    if exercise:
+        data = rows(
+            conn,
+            """
+            SELECT w.date, w.activity_id AS id, s.exercise_name, s.set_order,
+                   s.category, s.reps, s.weight_kg, s.duration_secs,
+                   w.notes, w.total_duration_mins, w.avg_hr
             FROM strength_sets s
             JOIN workouts w ON w.activity_id = s.activity_id
-            WHERE s.exercise_name IS NOT NULL
+            WHERE s.exercise_name = ?
+            ORDER BY w.date, w.activity_id, s.set_order
+            LIMIT ?
+            """,
+            (exercise, row_limit(args, 30, 10, 60)),
         )
-        SELECT date, exercise_name, reps, weight_kg, duration_secs
-        FROM ranked
-        WHERE rn = 1
-        ORDER BY exercise_name
+        if d == "full":
+            print_rows(f"Strength Progression: {exercise}", data, [("date", 10), ("id", 11), ("exercise_name", 36), ("set_order", 9), ("category", 12), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13), ("notes", 72), ("total_duration_mins", 19), ("avg_hr", 6)])
+        else:
+            print_rows(f"Strength Progression: {exercise}", data, [("date", 10), ("set_order", 9), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13)])
+    else:
+        if d == "full":
+            data = rows(
+                conn,
+                """
+                WITH ranked AS (
+                    SELECT w.date, w.activity_id, w.name, s.exercise_name, s.category,
+                           s.reps, s.weight_kg, s.duration_secs, s.set_order,
+                           ROW_NUMBER() OVER (PARTITION BY s.exercise_name ORDER BY w.date DESC, w.activity_id DESC, s.set_order DESC) AS rn
+                    FROM strength_sets s
+                    JOIN workouts w ON w.activity_id = s.activity_id
+                    WHERE s.exercise_name IS NOT NULL
+                )
+                SELECT date, activity_id AS id, name, exercise_name, category, set_order, reps, weight_kg, duration_secs
+                FROM ranked
+                WHERE rn = 1
+                ORDER BY exercise_name
+                LIMIT ?
+                """,
+                (row_limit(args, 20, 10, 40),),
+            )
+            print_rows("Latest Strength By Exercise", data, [("date", 10), ("id", 11), ("name", 18), ("exercise_name", 36), ("category", 12), ("set_order", 9), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13)])
+        else:
+            data = rows(
+                conn,
+                """
+                WITH ranked AS (
+                    SELECT w.date, s.exercise_name, s.reps, s.weight_kg, s.duration_secs,
+                           ROW_NUMBER() OVER (PARTITION BY s.exercise_name ORDER BY w.date DESC, w.activity_id DESC, s.set_order DESC) AS rn
+                    FROM strength_sets s
+                    JOIN workouts w ON w.activity_id = s.activity_id
+                    WHERE s.exercise_name IS NOT NULL
+                )
+                SELECT date, exercise_name, reps, weight_kg, duration_secs
+                FROM ranked
+                WHERE rn = 1
+                ORDER BY exercise_name
+                LIMIT ?
+                """,
+                (row_limit(args, 20, 10),),
+            )
+            print_rows("Latest Strength By Exercise", data, [("date", 10), ("exercise_name", 36), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13)])
+
+
+def section_strength_sets(conn, args, anchor):
+    d = detail_level(args)
+    exercise = args.exercise
+    base_where = ""
+    base_params = []
+    if exercise:
+        base_where = "AND s.exercise_name = ?"
+        base_params = [exercise]
+    data = rows(
+        conn,
+        f"""
+        SELECT w.date, w.activity_id AS id, w.name,
+               s.set_order, s.exercise_name, s.category,
+               s.reps, s.weight_kg, s.duration_secs,
+               w.notes, w.total_duration_mins, w.avg_hr
+        FROM strength_sets s
+        JOIN workouts w ON w.activity_id = s.activity_id
+        WHERE w.sport IN ('strength_training', 'fitness_equipment') {base_where}
+        ORDER BY w.date DESC, w.activity_id DESC, s.set_order
         LIMIT ?
         """,
-        (limit_for(args, 20, 10),),
+        (*base_params, row_limit(args, 30, 10, 60)),
     )
-    print_rows("Latest Strength By Exercise", data, [("date", 10), ("exercise_name", 36), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13)])
+    print_rows("Strength Set Details", data, [("date", 10), ("id", 11), ("name", 18), ("set_order", 9), ("exercise_name", 36), ("category", 12), ("reps", 5), ("weight_kg", 9), ("duration_secs", 13), ("notes", 72), ("total_duration_mins", 19), ("avg_hr", 6)])
 
 
 def section_strength_gap(conn, args, anchor):
@@ -526,6 +922,40 @@ def section_strength_gap(conn, args, anchor):
         return
     gap = (datetime.date.fromisoformat(anchor) - datetime.date.fromisoformat(latest)).days
     print_rows("Strength Gap", [{"latest_strength": latest, "days_since": gap}], [("latest_strength", 15), ("days_since", 10)])
+
+
+def section_latest_route(conn, args, anchor):
+    sport_clause, sport_params = sport_where(selected_sports(args), prefix="w")
+    row = rows(
+        conn,
+        f"""
+        SELECT w.activity_id AS id, w.date, w.sport, w.name, w.distance_km AS km,
+               r.point_count, r.surface_source, r.surface_total_km,
+               r.hard_surface_km, r.soft_surface_km, r.distance_unknown_km,
+               r.start_lat, r.start_lon, r.end_lat, r.end_lon,
+               r.center_lat, r.center_lon,
+               r.distance_asphalt_km, r.distance_concrete_km, r.distance_paved_other_km,
+               r.distance_gravel_km, r.distance_trail_km
+        FROM workouts w
+        JOIN workout_routes r ON r.activity_id = w.activity_id
+        WHERE w.date BETWEEN ? AND ? {sport_clause}
+        ORDER BY w.date DESC, w.activity_id DESC
+        LIMIT 1
+        """,
+        (window_start(anchor, args), anchor, *sport_params),
+    )
+    if not row:
+        print_lines("Latest Routed Workout", ["No workouts with route data found in window."])
+        return
+    print_rows("Latest Routed Workout", row, [
+        ("id", 11), ("date", 10), ("sport", 12), ("name", 20), ("km", 6),
+        ("point_count", 11), ("surface_source", 16), ("surface_total_km", 16),
+        ("hard_surface_km", 15), ("soft_surface_km", 15), ("distance_unknown_km", 19),
+        ("start_lat", 9), ("start_lon", 9), ("end_lat", 9), ("end_lon", 9),
+        ("center_lat", 10), ("center_lon", 10),
+        ("distance_asphalt_km", 19), ("distance_concrete_km", 20), ("distance_paved_other_km", 23),
+        ("distance_gravel_km", 18), ("distance_trail_km", 17),
+    ])
 
 
 def section_workout_detail(conn, args, anchor):
@@ -546,33 +976,66 @@ def section_workout_detail(conn, args, anchor):
 
 
 def section_workout_weather(conn, args, anchor):
-    data = rows(
-        conn,
-        """
-        SELECT weather_source, avg_temp_c, min_temp_c, max_temp_c, avg_humidity_pct,
-               precipitation_mm, rain_mm, snowfall_mm, avg_wind_kmh, max_wind_gust_kmh,
-               weather_codes_json
-        FROM workout_weather
-        WHERE activity_id = ?
-        """,
-        (args.workout,),
-    )
-    print_rows("Workout Weather", data, [("weather_source", 20), ("avg_temp_c", 10), ("min_temp_c", 10), ("max_temp_c", 10), ("avg_humidity_pct", 16), ("precipitation_mm", 16), ("rain_mm", 8), ("snowfall_mm", 11), ("avg_wind_kmh", 12), ("max_wind_gust_kmh", 19), ("weather_codes_json", 18)])
+    d = detail_level(args)
+    if d == "full":
+        data = rows(
+            conn,
+            """
+            SELECT weather_source, latitude, longitude,
+                   avg_temp_c, min_temp_c, max_temp_c, avg_humidity_pct,
+                   precipitation_mm, rain_mm, snowfall_mm, avg_wind_kmh, max_wind_gust_kmh,
+                   weather_codes_json
+            FROM workout_weather
+            WHERE activity_id = ?
+            """,
+            (args.workout,),
+        )
+        print_rows("Workout Weather", data, [("weather_source", 20), ("latitude", 8), ("longitude", 8), ("avg_temp_c", 10), ("min_temp_c", 10), ("max_temp_c", 10), ("avg_humidity_pct", 16), ("precipitation_mm", 16), ("rain_mm", 8), ("snowfall_mm", 11), ("avg_wind_kmh", 12), ("max_wind_gust_kmh", 19), ("weather_codes_json", 18)])
+    else:
+        data = rows(
+            conn,
+            """
+            SELECT weather_source, avg_temp_c, min_temp_c, max_temp_c, avg_humidity_pct,
+                   precipitation_mm, rain_mm, snowfall_mm, avg_wind_kmh, max_wind_gust_kmh,
+                   weather_codes_json
+            FROM workout_weather
+            WHERE activity_id = ?
+            """,
+            (args.workout,),
+        )
+        print_rows("Workout Weather", data, [("weather_source", 20), ("avg_temp_c", 10), ("min_temp_c", 10), ("max_temp_c", 10), ("avg_humidity_pct", 16), ("precipitation_mm", 16), ("rain_mm", 8), ("snowfall_mm", 11), ("avg_wind_kmh", 12), ("max_wind_gust_kmh", 19), ("weather_codes_json", 18)])
 
 
 def section_workout_surfaces(conn, args, anchor):
-    route = rows(
-        conn,
-        """
-        SELECT point_count, surface_source, surface_total_km, hard_surface_km, soft_surface_km,
-               distance_asphalt_km, distance_concrete_km, distance_paved_other_km,
-               distance_gravel_km, distance_trail_km, distance_unknown_km
-        FROM workout_routes
-        WHERE activity_id = ?
-        """,
-        (args.workout,),
-    )
-    print_rows("Workout Surface Summary", route, [("point_count", 11), ("surface_source", 16), ("surface_total_km", 16), ("hard_surface_km", 15), ("soft_surface_km", 15), ("distance_asphalt_km", 19), ("distance_concrete_km", 20), ("distance_paved_other_km", 23), ("distance_gravel_km", 18), ("distance_trail_km", 17), ("distance_unknown_km", 19)])
+    d = detail_level(args)
+    if d == "full":
+        route = rows(
+            conn,
+            """
+            SELECT point_count, surface_source, surface_total_km, hard_surface_km, soft_surface_km,
+                   distance_asphalt_km, distance_concrete_km, distance_paved_other_km,
+                   distance_gravel_km, distance_trail_km, distance_unknown_km,
+                   start_lat, start_lon, end_lat, end_lon, center_lat, center_lon
+            FROM workout_routes
+            WHERE activity_id = ?
+            """,
+            (args.workout,),
+        )
+        print_rows("Workout Surface Summary", route, [("point_count", 11), ("surface_source", 16), ("surface_total_km", 16), ("hard_surface_km", 15), ("soft_surface_km", 15), ("distance_asphalt_km", 19), ("distance_concrete_km", 20), ("distance_paved_other_km", 23), ("distance_gravel_km", 18), ("distance_trail_km", 17), ("distance_unknown_km", 19), ("start_lat", 9), ("start_lon", 9), ("end_lat", 9), ("end_lon", 9), ("center_lat", 10), ("center_lon", 10)])
+    else:
+        route = rows(
+            conn,
+            """
+            SELECT point_count, surface_source, surface_total_km, hard_surface_km, soft_surface_km,
+                   distance_asphalt_km, distance_concrete_km, distance_paved_other_km,
+                   distance_gravel_km, distance_trail_km, distance_unknown_km
+            FROM workout_routes
+            WHERE activity_id = ?
+            """,
+            (args.workout,),
+        )
+        print_rows("Workout Surface Summary", route, [("point_count", 11), ("surface_source", 16), ("surface_total_km", 16), ("hard_surface_km", 15), ("soft_surface_km", 15), ("distance_asphalt_km", 19), ("distance_concrete_km", 20), ("distance_paved_other_km", 23), ("distance_gravel_km", 18), ("distance_trail_km", 17), ("distance_unknown_km", 19)])
+
     segs = rows(
         conn,
         """
@@ -586,6 +1049,42 @@ def section_workout_surfaces(conn, args, anchor):
         (args.workout,),
     )
     print_rows("Workout Surface Segments", segs, [("surface", 12), ("surface_confidence", 18), ("segments", 8), ("km", 7), ("avg_match_m", 11)])
+
+    if raw_enabled(args, "segments"):
+        ordered = rows(
+            conn,
+            """
+            SELECT sample_order, start_time_utc, end_time_utc, distance_km,
+                   surface, surface_confidence, raw_surface, raw_highway, raw_tracktype,
+                   match_distance_m
+            FROM workout_surface_segments
+            WHERE activity_id = ?
+            ORDER BY sample_order
+            """,
+            (args.workout,),
+        )
+        cap = 200
+        total = len(ordered)
+        if total > cap:
+            print_rows(f"Raw Ordered Surface Segments (showing {cap} of {total})", ordered[:cap], [("sample_order", 12), ("start_time_utc", 22), ("end_time_utc", 22), ("distance_km", 10), ("surface", 12), ("surface_confidence", 18), ("raw_surface", 14), ("raw_highway", 14), ("raw_tracktype", 14), ("match_distance_m", 15)])
+            print(f"  ... {total - cap} segments omitted. Use --workout to inspect a single workout.")
+        else:
+            print_rows("Raw Ordered Surface Segments", ordered, [("sample_order", 12), ("start_time_utc", 22), ("end_time_utc", 22), ("distance_km", 10), ("surface", 12), ("surface_confidence", 18), ("raw_surface", 14), ("raw_highway", 14), ("raw_tracktype", 14), ("match_distance_m", 15)])
+    elif d == "full":
+        ordered_count = scalar(conn, "SELECT COUNT(*) FROM workout_surface_segments WHERE activity_id = ?", (args.workout,)) or 0
+        if ordered_count > 0:
+            preview = rows(
+                conn,
+                """
+                SELECT sample_order, distance_km, surface, surface_confidence
+                FROM workout_surface_segments
+                WHERE activity_id = ?
+                ORDER BY sample_order
+                LIMIT 6
+                """,
+                (args.workout,),
+            )
+            print_rows(f"Surface Segments Preview ({ordered_count} total, showing first 6)", preview, [("sample_order", 12), ("distance_km", 10), ("surface", 12), ("surface_confidence", 18)])
 
 
 def section_workout_stream_summary(conn, args, anchor):
@@ -604,7 +1103,7 @@ def section_workout_stream_summary(conn, args, anchor):
         else:
             out.append({"stream": name.replace("_stream", ""), "points": len(vals), "min": None, "avg": None, "max": None})
     print_rows("Workout Stream Summary", out, [("stream", 10), ("points", 6), ("min", 8), ("avg", 8), ("max", 8)])
-    if args.raw_streams:
+    if raw_enabled(args, "streams"):
         print_lines("Raw Workout Streams", [f"{key}: {row[key] or ''}" for key in row.keys()])
 
 
@@ -629,20 +1128,60 @@ def pace_to_seconds(value):
 
 
 def section_day_health(conn, args, anchor):
+    d = detail_level(args)
     day = args.date.isoformat()
-    data = rows(
-        conn,
-        """
-        SELECT date, weight_kg, resting_hr, max_hr, total_steps, calories_active,
-               intensity_minutes, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
-               sleep_score, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
-               hrv_status, training_readiness AS readiness, training_load AS load
-        FROM daily_summary
-        WHERE date = ?
-        """,
-        (day,),
-    )
-    print_rows("Day Health", data, [("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("max_hr", 7), ("total_steps", 11), ("calories_active", 15), ("intensity_minutes", 17), ("sleep_hrs", 9), ("sleep_score", 11), ("hrv", 6), ("hrv_7d", 7), ("hrv_status", 12), ("readiness", 9), ("load", 6)])
+    if d == "full":
+        data = rows(
+            conn,
+            """
+            SELECT date, weight_kg, resting_hr, max_hr, total_steps, calories_active,
+                   intensity_minutes, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_score, sleep_deep_mins, sleep_light_mins, sleep_rem_mins, sleep_awake_mins,
+                   hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   hrv_status, training_status, training_status_feedback,
+                   training_load_balance_feedback, training_readiness AS readiness, training_load AS load
+            FROM daily_summary
+            WHERE date = ?
+            """,
+            (day,),
+        )
+        print_rows("Day Health", data, [
+            ("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("max_hr", 7),
+            ("total_steps", 11), ("calories_active", 15), ("intensity_minutes", 17),
+            ("sleep_hrs", 9), ("sleep_score", 11),
+            ("sleep_deep_mins", 14), ("sleep_light_mins", 15), ("sleep_rem_mins", 14), ("sleep_awake_mins", 14),
+            ("hrv", 6), ("hrv_7d", 7), ("hrv_status", 12),
+            ("training_status", 15), ("training_status_feedback", 26), ("training_load_balance_feedback", 30),
+            ("readiness", 9), ("load", 6),
+        ])
+        for stream_name, label in [("stress_stream", "Stress"), ("body_battery_stream", "Body Battery"), ("respiration_stream", "Respiration")]:
+            raw_val = scalar(conn, f"SELECT {stream_name} FROM daily_summary WHERE date = ?", (day,))
+            vals = load_json_list(raw_val)
+            nums = [float(v) for v in vals if isinstance(v, (int, float)) or (isinstance(v, str) and v.replace('.', '', 1).replace('-', '', 1).isdigit())]
+            if nums:
+                summary = [{"stream": label, "points": len(vals), "min": round(min(nums), 1), "avg": round(sum(nums) / len(nums), 1), "max": round(max(nums), 1), "first": nums[0], "last": nums[-1]}]
+            else:
+                summary = [{"stream": label, "points": len(vals), "min": None, "avg": None, "max": None, "first": None, "last": None}]
+            print_rows(f"Day {label} Stream Summary", summary, [("stream", 14), ("points", 6), ("min", 8), ("avg", 8), ("max", 8), ("first", 8), ("last", 8)])
+        if raw_enabled(args, "streams"):
+            for stream_name, label in [("stress_stream", "Stress"), ("body_battery_stream", "Body Battery"), ("respiration_stream", "Respiration")]:
+                raw_val = scalar(conn, f"SELECT {stream_name} FROM daily_summary WHERE date = ?", (day,))
+                if raw_val:
+                    print_lines(f"Raw {label} Stream", [raw_val])
+    else:
+        data = rows(
+            conn,
+            """
+            SELECT date, weight_kg, resting_hr, max_hr, total_steps, calories_active,
+                   intensity_minutes, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_score, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   hrv_status, training_readiness AS readiness, training_load AS load
+            FROM daily_summary
+            WHERE date = ?
+            """,
+            (day,),
+        )
+        print_rows("Day Health", data, [("date", 10), ("weight_kg", 9), ("resting_hr", 10), ("max_hr", 7), ("total_steps", 11), ("calories_active", 15), ("intensity_minutes", 17), ("sleep_hrs", 9), ("sleep_score", 11), ("hrv", 6), ("hrv_7d", 7), ("hrv_status", 12), ("readiness", 9), ("load", 6)])
 
 
 def section_day_workouts(conn, args, anchor):
@@ -679,18 +1218,41 @@ def section_day_decisions(conn, args, anchor):
 
 def section_day_recovery_context(conn, args, anchor):
     day = args.date.isoformat()
-    data = rows(
-        conn,
-        """
-        SELECT date, resting_hr, hrv_last_night_avg AS hrv, training_readiness AS readiness,
-               sleep_score, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs, training_load AS load
-        FROM daily_summary
-        WHERE date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
-        ORDER BY date
-        """,
-        (day, day),
-    )
-    print_rows("Previous/Next Day Recovery", data, [("date", 10), ("resting_hr", 10), ("hrv", 6), ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9), ("load", 6)])
+    d = detail_level(args)
+    if d == "full":
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, hrv_last_night_avg AS hrv, hrv_weekly_avg AS hrv_7d,
+                   hrv_status, training_readiness AS readiness,
+                   sleep_score, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs,
+                   sleep_deep_mins, sleep_light_mins, sleep_rem_mins,
+                   training_load AS load, training_status_feedback, training_load_balance_feedback
+            FROM daily_summary
+            WHERE date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+            ORDER BY date
+            """,
+            (day, day),
+        )
+        print_rows("Previous/Next Day Recovery", data, [
+            ("date", 10), ("resting_hr", 10), ("hrv", 6), ("hrv_7d", 7), ("hrv_status", 12),
+            ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9),
+            ("sleep_deep_mins", 14), ("sleep_light_mins", 15), ("sleep_rem_mins", 14),
+            ("load", 6), ("training_status_feedback", 26), ("training_load_balance_feedback", 30),
+        ])
+    else:
+        data = rows(
+            conn,
+            """
+            SELECT date, resting_hr, hrv_last_night_avg AS hrv, training_readiness AS readiness,
+                   sleep_score, ROUND(sleep_duration_mins / 60.0, 1) AS sleep_hrs, training_load AS load
+            FROM daily_summary
+            WHERE date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+            ORDER BY date
+            """,
+            (day, day),
+        )
+        print_rows("Previous/Next Day Recovery", data, [("date", 10), ("resting_hr", 10), ("hrv", 6), ("readiness", 9), ("sleep_score", 11), ("sleep_hrs", 9), ("load", 6)])
 
 
 def section_derived_flags(conn, args, anchor):
@@ -698,7 +1260,7 @@ def section_derived_flags(conn, args, anchor):
     min_sev = SEVERITY_ORDER[args.severity]
     flags = [f for f in flags if SEVERITY_ORDER[f["severity"]] >= min_sev]
     flags.sort(key=lambda f: (-SEVERITY_ORDER[f["severity"]], f["date"], f["group"]))
-    limit = 8 if args.brief else 16
+    limit = 6 if detail_level(args) == "summary" else (16 if detail_level(args) == "full" else 10)
     print_rows("Derived Flags", flags[:limit], [("date", 10), ("group", 10), ("severity", 8), ("flag", 110)])
 
 
@@ -873,19 +1435,24 @@ SECTION_FUNCS = {
     "day_health": section_day_health,
     "day_recovery_context": section_day_recovery_context,
     "day_workouts": section_day_workouts,
+    "decision_context": section_decision_context,
     "derived_flags": section_derived_flags,
     "due_reviews": section_due_reviews,
+    "latest_route": section_latest_route,
     "load_summary": section_load_summary,
     "long_session_fueling": section_long_session_fueling,
     "long_walks": section_long_walks,
     "nutrition_notes": section_nutrition_notes,
     "pack_fuel_notes": section_pack_fuel_notes,
+    "recent_decisions": section_recent_decisions,
     "recent_health": section_recent_health,
     "recent_workouts": section_recent_workouts,
     "recovery_trend": section_recovery_trend,
+    "strength_decisions": section_active_decisions,
     "strength_gap": section_strength_gap,
     "strength_progression": section_strength_progression,
     "strength_sessions": section_strength_sessions,
+    "strength_sets": section_strength_sets,
     "surface_exposure": section_surface_exposure,
     "surface_specificity": section_surface_specificity,
     "symptom_notes": section_symptom_notes,
@@ -902,6 +1469,9 @@ SECTION_FUNCS = {
 
 def selected_sections(args):
     profile_sections = list(PROFILE_SECTIONS[args.profile])
+    if args.profile == "strength" and detail_level(args) == "full":
+        if "strength_sets" not in profile_sections:
+            profile_sections.append("strength_sets")
     if args.section and args.append_sections:
         return profile_sections + [s for s in args.section if s not in profile_sections]
     if args.section:
@@ -922,8 +1492,22 @@ def main():
         print("# Coach Context")
         print(f"Database: {db_file}")
         print(f"Profile: {args.profile}")
+        print(f"Detail: {detail_level(args)}")
         print(f"Anchor date: {anchor}")
         print(f"Window: {window_start(anchor, args)} to {anchor}")
+        sports = selected_sports(args)
+        if sports:
+            print(f"Sport filter: {', '.join(sports)}")
+        topics = selected_topics(args)
+        if topics:
+            print(f"Topic filter: {', '.join(topics)}")
+        if args.exercise:
+            print(f"Exercise: {args.exercise}")
+        raw_val = args.raw
+        if raw_val is None and args.raw_streams:
+            raw_val = "streams"
+        if raw_val and raw_val != "none":
+            print(f"Raw: {raw_val}")
         print("Use this as coaching context; query deeper only when the answer requires raw detail.")
         for section in selected_sections(args):
             run_section(section, conn, args, anchor)
