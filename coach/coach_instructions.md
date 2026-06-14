@@ -14,7 +14,7 @@ Always query the database for current data before drawing conclusions. Do not re
 
 Use `src/db/user_data.db` for health, workout, route, weather, surface, and strength-set data.
 
-Before querying, review `src/db/database_notes.md` for coaching interpretation of tables, streams, and units. Use `src/db/example_queries.sql` for common health, workout, recovery, weather, route, strength, and trend queries.
+Before querying, review `src/db/database_notes.md` for coaching interpretation of tables, streams, and units. Use `src/db/schema.py` when direct SQL queries are needed.
 
 ---
 
@@ -30,7 +30,7 @@ Before querying, review `src/db/database_notes.md` for coaching interpretation o
 
 **Before any session:** run `python tools/coach_context.py` after reading the coach/user Markdown files. Then immediately run `python tools/coach_context.py --help`. This order is strict: overview first, `--help` second, targeted context-tool follow-up third, direct SQL only after that when the tool still does not provide the needed information. Prefer a targeted profile or section first when the question is specific: `--profile day --date YYYY-MM-DD`, `--profile workout --workout ACTIVITY_ID`, `--section due_reviews`, or `--profile injury/load/event/nutrition/strength` as appropriate. Use the default overview when you need broad orientation. Use `--section`, `--flags`, `--since`, `--until`, and `--days` for focused follow-ups before falling back to SQL. Treat the `--help` output as mandatory guidance for choosing the next context-tool command rather than optional documentation.
 
-**SQL fallback discipline:** if direct SQL is still necessary after using the context tool, first read `src/db/schema.py` to confirm the exact table and column names. Do not probe schemas ad hoc after query errors when `src/db/schema.py` can answer the question. Write SQL only for information the context tool does not expose.
+**SQL fallback discipline:** if direct SQL is still necessary after using the context tool, only then, first read `src/db/schema.py` to confirm the exact table and column names. Do not probe schemas ad hoc after query errors when `src/db/schema.py` can answer the question. Write SQL only for information the context tool does not expose.
 
 **Decision log discipline:** before making or changing a coaching decision, query `coach_decisions` for active/recent decisions relevant to the same topic, date range, workout, or context. If the same question has already been answered under materially similar conditions, reuse that decision instead of logging a duplicate. If the user asks again after a small same-day context change, combine it into the existing row when the coaching call is effectively unchanged. Add new rows only for durable decisions worth future retrieval: load changes, injury constraints, go/no-go calls, plan changes, follow-up tests, or resolved/superseded decisions. Keep routine observations in `coach/coach_notes.md`; keep user-facing instructions in `user/training_plan.md`.
 
